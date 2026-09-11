@@ -59,7 +59,7 @@ router.get('/customers', async (req, res) => {
 
 router.post('/customers', async (req, res) => {
   try {
-    const { name, email, company, department, phone } = req.body;
+    const { name, email, company } = req.body;
     if (!name || !email || !company) {
       return res.status(400).json({
         success: false,
@@ -67,7 +67,7 @@ router.post('/customers', async (req, res) => {
       });
     }
 
-    const customer = await bookingService.addCustomer({ name, email, company, department, phone });
+    const customer = await bookingService.addCustomer({ name, email, company });
     res.status(201).json({
       success: true,
       message: 'Customer added successfully to PostgreSQL',

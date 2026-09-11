@@ -23,9 +23,8 @@ function initCustomerSearch() {
       const name = card.getAttribute('data-name')?.toLowerCase() || '';
       const email = card.getAttribute('data-email')?.toLowerCase() || '';
       const company = card.getAttribute('data-company')?.toLowerCase() || '';
-      const dept = card.getAttribute('data-department')?.toLowerCase() || '';
 
-      if (name.includes(query) || email.includes(query) || company.includes(query) || dept.includes(query)) {
+      if (name.includes(query) || email.includes(query) || company.includes(query)) {
         card.style.display = 'flex';
         visibleCount++;
       } else {

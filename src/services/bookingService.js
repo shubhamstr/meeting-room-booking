@@ -17,14 +17,9 @@ class BookingService {
         c.zoho_id AS "zohoId",
         c.name,
         c.email,
-        c.phone,
         c.company,
-        c.department,
-        c.avatar,
-        c.initials,
-        c.badge_color AS "badgeColor",
-        c.source,
         c.created_at AS "createdAt",
+        c.updated_at AS "updatedAt",
         COUNT(b.id) FILTER (WHERE b.status != 'Cancelled')::int AS "bookingCount"
       FROM customers c
       LEFT JOIN bookings b ON c.id = b.customer_id
@@ -33,7 +28,7 @@ class BookingService {
 
     if (searchQuery && searchQuery.trim()) {
       const q = `%${searchQuery.trim().toLowerCase()}%`;
-      sql += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.email) LIKE $1 OR LOWER(c.company) LIKE $1 OR LOWER(c.department) LIKE $1`;
+      sql += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.email) LIKE $1 OR LOWER(c.company) LIKE $1`;
       params.push(q);
     }
 
@@ -51,14 +46,9 @@ class BookingService {
         zoho_id AS "zohoId",
         name,
         email,
-        phone,
         company,
-        department,
-        avatar,
-        initials,
-        badge_color AS "badgeColor",
-        source,
-        created_at AS "createdAt"
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
        FROM customers 
        WHERE id = $1 LIMIT 1;`,
       [id]
@@ -74,14 +64,9 @@ class BookingService {
         zoho_id AS "zohoId",
         name,
         email,
-        phone,
         company,
-        department,
-        avatar,
-        initials,
-        badge_color AS "badgeColor",
-        source,
-        created_at AS "createdAt"
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
        FROM customers 
        WHERE LOWER(email) = LOWER($1) LIMIT 1;`,
       [email.trim()]
@@ -97,14 +82,9 @@ class BookingService {
         zoho_id AS "zohoId",
         name,
         email,
-        phone,
         company,
-        department,
-        avatar,
-        initials,
-        badge_color AS "badgeColor",
-        source,
-        created_at AS "createdAt"
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
        FROM customers 
        WHERE zoho_id = $1 LIMIT 1;`,
       [String(zohoId)]
@@ -112,12 +92,10 @@ class BookingService {
     return res.rows[0] || null;
   }
 
-  async addCustomer({ id, zohoId, name, email, phone, company, department, avatar, source = 'Direct' }) {
+  async addCustomer({ id, zohoId, name, email, company }) {
     const safeName = String(name || '').trim();
     const safeEmail = String(email || '').trim().toLowerCase();
-    const safePhone = phone ? String(phone).trim() : '+1 (555) 000-0000';
     const safeCompany = company ? (typeof company === 'object' ? (company.name || company.value || 'Independent Corp') : String(company).trim()) : 'Independent Corp';
-    const safeDept = department ? (typeof department === 'object' ? (department.name || department.value || 'General') : String(department).trim()) : 'General';
     const customerId = id || `cust-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     // If customer already exists in PostgreSQL by zohoId or email, do not re-insert or overwrite
@@ -134,36 +112,19 @@ class BookingService {
       }
     }
 
-    const initials = safeName
-      .split(' ')
-      .filter(Boolean)
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) || 'CU';
-
-    const colors = ['#6366f1', '#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    const defaultAvatar = avatar || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`;
-
     const res = await query(
-      `INSERT INTO customers (id, zoho_id, name, email, phone, company, department, avatar, initials, badge_color, source, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+      `INSERT INTO customers (id, zoho_id, name, email, company, updated_at)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
        ON CONFLICT (email) DO NOTHING
        RETURNING 
          id,
          zoho_id AS "zohoId",
          name,
          email,
-         phone,
          company,
-         department,
-         avatar,
-         initials,
-         badge_color AS "badgeColor",
-         source,
-         created_at AS "createdAt";`,
-      [customerId, zohoId || null, safeName, safeEmail, safePhone, safeCompany, safeDept, defaultAvatar, initials, randomColor, source]
+         created_at AS "createdAt",
+         updated_at AS "updatedAt";`,
+      [customerId, zohoId || null, safeName, safeEmail, safeCompany]
     );
 
     if (res.rows && res.rows[0]) {
@@ -421,7 +382,6 @@ class BookingService {
         c.name AS "customerName",
         c.company AS "customerCompany",
         c.email AS "customerEmail",
-        c.avatar AS "customerAvatar",
         b.room_id AS "roomId",
         r.name AS "roomName",
         r.floor AS "roomFloor",

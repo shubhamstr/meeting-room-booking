@@ -117,19 +117,37 @@ export async function initDb() {
     console.log('[PostgreSQL] Initializing database schema & tables...');
 
     // 1. Customers Table (Synchronized from Zoho CRM or added manually)
+    // Migrate existing table if old columns exist
+    await query(`
+      DO $$ 
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customers') THEN
+          -- Rename created to created_at if present
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'created') THEN
+            ALTER TABLE customers RENAME COLUMN created TO created_at;
+          END IF;
+          -- Rename updated to updated_at if present
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'updated') THEN
+            ALTER TABLE customers RENAME COLUMN updated TO updated_at;
+          END IF;
+          -- Drop unused columns
+          ALTER TABLE customers DROP COLUMN IF EXISTS phone;
+          ALTER TABLE customers DROP COLUMN IF EXISTS department;
+          ALTER TABLE customers DROP COLUMN IF EXISTS avatar;
+          ALTER TABLE customers DROP COLUMN IF EXISTS initials;
+          ALTER TABLE customers DROP COLUMN IF EXISTS badge_color;
+          ALTER TABLE customers DROP COLUMN IF EXISTS source;
+        END IF;
+      END $$;
+    `);
+
     await query(`
       CREATE TABLE IF NOT EXISTS customers (
         id VARCHAR(100) PRIMARY KEY,
         zoho_id VARCHAR(100) UNIQUE,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
-        phone VARCHAR(100),
         company VARCHAR(255),
-        department VARCHAR(255),
-        avatar TEXT,
-        initials VARCHAR(10),
-        badge_color VARCHAR(30),
-        source VARCHAR(100) DEFAULT 'Direct',
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );

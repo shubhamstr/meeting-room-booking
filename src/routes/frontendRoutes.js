@@ -41,12 +41,12 @@ router.get('/customers', async (req, res) => {
 // Quick-Add Customer Profile
 router.post('/customers/new', async (req, res) => {
   try {
-    const { name, email, company, department, phone } = req.body;
+    const { name, email, company } = req.body;
     if (!name || !email || !company) {
       return res.redirect('/customers?error=Name,+email,+and+company+are+required.');
     }
 
-    const newCust = await bookingService.addCustomer({ name, email, company, department, phone });
+    const newCust = await bookingService.addCustomer({ name, email, company });
     // Navigate to booking room for this newly created customer
     res.redirect(`/book?customerId=${newCust.id}&success=Customer+profile+created+successfully.+Pick+a+room+to+proceed.`);
   } catch (err) {
