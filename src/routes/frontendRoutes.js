@@ -50,9 +50,21 @@ router.post('/customers/new', async (req, res) => {
   }
 });
 
-// 2. Room & Slot Picker View for Selected Customer
-router.get('/book', async (req, res) => {
+// 2. Full-Screen Rooms Directory & Picker View
+router.get('/rooms', async (req, res) => {
   try {
+    const minCapacity = parseInt(req.query.minCapacity, 10) || 0;
+    const rooms = await bookingService.getRooms(minCapacity);
+
+    // If API client / AJAX request, return JSON
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || req.query.json === 'true') {
+      return res.json({
+        success: true,
+        count: rooms.length,
+        data: rooms
+      });
+    }
+
     let customerId = req.query.customerId;
     const customers = await bookingService.getCustomers();
 
@@ -60,32 +72,94 @@ router.get('/book', async (req, res) => {
       customerId = customers[0].id;
     }
 
-    if (!customerId) {
-      return res.redirect('/customers?info=Please+sync+Zoho+CRM+or+register+a+customer+first+to+book+a+room.');
-    }
+    const customer = customerId ? await bookingService.getCustomerById(customerId) : null;
 
-    const customer = await bookingService.getCustomerById(customerId);
-    if (!customer) {
-      return res.redirect('/customers?error=Customer+not+found.+Please+pick+a+valid+customer.');
-    }
-
-    const rooms = await bookingService.getRooms();
-    const roomId = req.query.roomId || (rooms[0] ? rooms[0].id : '');
-    const selectedRoom = (await bookingService.getRoomById(roomId)) || rooms[0];
-    const selectedDate = req.query.date || getTodayDateString(0);
-    const slots = await bookingService.getSlotsWithAvailability(selectedRoom ? selectedRoom.id : '', selectedDate);
-
-    res.render('book', {
+    res.render('rooms', {
       customer,
+      customers,
       rooms,
-      selectedRoom,
-      selectedDate,
+      minCapacity,
+      successMessage: req.query.success || null,
+      errorMessage: req.query.error || null,
+      infoMessage: req.query.info || null
+    });
+  } catch (err) {
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    res.redirect(`/customers?error=${encodeURIComponent(err.message)}`);
+  }
+});
+
+// Alias /book to /rooms for seamless navigation
+router.get('/book', async (req, res) => {
+  const customerId = req.query.customerId;
+  const roomId = req.query.roomId;
+  const date = req.query.date || getTodayDateString(0);
+
+  if (roomId) {
+    return res.redirect(`/rooms/${roomId}/availability?date=${date}${customerId ? `&customerId=${customerId}` : ''}`);
+  }
+  res.redirect(`/rooms${customerId ? `?customerId=${customerId}` : ''}`);
+});
+
+// 3. Room Availability & Free/Busy Slots View
+router.get('/rooms/:id/availability', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const date = req.query.date || getTodayDateString(0);
+    const customerId = req.query.customerId;
+
+    const room = await bookingService.getRoomById(id);
+    if (!room) {
+      if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || req.query.json === 'true') {
+        return res.status(404).json({ success: false, error: 'Room not found' });
+      }
+      return res.redirect('/rooms?error=Room+not+found');
+    }
+
+    const slots = await bookingService.getSlotsWithAvailability(id, date);
+    const freeSlots = slots.filter(s => s.isAvailable);
+    const busySlots = slots.filter(s => !s.isAvailable);
+
+    // If API client / AJAX request, return JSON
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || req.query.json === 'true') {
+      return res.json({
+        success: true,
+        room,
+        date,
+        slots,
+        freeSlots,
+        busySlots,
+        totalSlots: slots.length,
+        freeCount: freeSlots.length,
+        busyCount: busySlots.length
+      });
+    }
+
+    // Load customer context for booking
+    const customers = await bookingService.getCustomers();
+    let selectedCustomer = customerId ? await bookingService.getCustomerById(customerId) : (customers[0] || null);
+
+    const allRooms = await bookingService.getRooms();
+
+    res.render('room-availability', {
+      room,
+      allRooms,
+      date,
       slots,
+      freeSlots,
+      busySlots,
+      customer: selectedCustomer,
+      customers,
       successMessage: req.query.success || null,
       errorMessage: req.query.error || null
     });
   } catch (err) {
-    res.redirect(`/customers?error=${encodeURIComponent(err.message)}`);
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    res.redirect(`/rooms?error=${encodeURIComponent(err.message)}`);
   }
 });
 
@@ -95,7 +169,7 @@ router.post('/book', async (req, res) => {
     const { customerId, roomId, date, slotId, title, attendees, notes } = req.body;
 
     if (!customerId || !roomId || !date || !slotId) {
-      return res.redirect(`/book?customerId=${customerId}&roomId=${roomId}&error=Please+complete+room+and+slot+selection.`);
+      return res.redirect(`/rooms/${roomId}/availability?date=${date}&customerId=${customerId}&error=Please+complete+room+and+slot+selection.`);
     }
 
     const newBooking = await bookingService.createBooking({
@@ -126,11 +200,12 @@ router.post('/book', async (req, res) => {
   } catch (err) {
     const custId = req.body.customerId || '';
     const rId = req.body.roomId || '';
-    res.redirect(`/book?customerId=${custId}&roomId=${rId}&error=${encodeURIComponent(err.message)}`);
+    const dt = req.body.date || getTodayDateString(0);
+    res.redirect(`/rooms/${rId}/availability?date=${dt}&customerId=${custId}&error=${encodeURIComponent(err.message)}`);
   }
 });
 
-// 3. Bookings List & Overview
+// 4. Bookings List & Overview
 router.get('/bookings', async (req, res) => {
   try {
     const { search, roomId, status, date } = req.query;

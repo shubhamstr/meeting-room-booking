@@ -253,6 +253,80 @@ class BookingService {
     }));
   }
 
+  async getPaginatedRooms({ search = '', minCapacity = 0, page = 1, limit = 6 } = {}) {
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.max(1, parseInt(limit, 10) || 6);
+    const offset = (pageNum - 1) * pageSize;
+
+    let countSql = `SELECT COUNT(*)::int AS total FROM rooms r WHERE 1=1`;
+    const countParams = [];
+    let countIdx = 1;
+
+    if (minCapacity > 0) {
+      countSql += ` AND r.capacity >= $${countIdx++}`;
+      countParams.push(minCapacity);
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      countSql += ` AND (LOWER(r.name) LIKE $${countIdx} OR LOWER(r.type) LIKE $${countIdx} OR LOWER(r.floor) LIKE $${countIdx})`;
+      countParams.push(q);
+      countIdx++;
+    }
+
+    const countRes = await query(countSql, countParams);
+    const total = countRes.rows[0]?.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    let dataSql = `
+      SELECT 
+        r.id,
+        r.name,
+        r.floor,
+        r.capacity,
+        r.hourly_rate::float AS "hourlyRate",
+        r.type,
+        r.description,
+        r.image,
+        r.amenities
+      FROM rooms r
+      WHERE 1=1
+    `;
+    const dataParams = [];
+    let paramIdx = 1;
+
+    if (minCapacity > 0) {
+      dataSql += ` AND r.capacity >= $${paramIdx++}`;
+      dataParams.push(minCapacity);
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      dataSql += ` AND (LOWER(r.name) LIKE $${paramIdx} OR LOWER(r.type) LIKE $${paramIdx} OR LOWER(r.floor) LIKE $${paramIdx})`;
+      dataParams.push(q);
+      paramIdx++;
+    }
+
+    dataSql += ` ORDER BY r.capacity ASC LIMIT $${paramIdx++} OFFSET $${paramIdx++};`;
+    dataParams.push(pageSize, offset);
+
+    const dataRes = await query(dataSql, dataParams);
+    const rooms = dataRes.rows.map(r => ({
+      ...r,
+      amenities: typeof r.amenities === 'string' ? JSON.parse(r.amenities) : (r.amenities || [])
+    }));
+
+    return {
+      rooms,
+      total,
+      page: pageNum,
+      pageSize,
+      totalPages,
+      hasNextPage: pageNum < totalPages,
+      hasPrevPage: pageNum > 1
+    };
+  }
+
   async getRoomById(id) {
     if (!id) return null;
     const res = await query(

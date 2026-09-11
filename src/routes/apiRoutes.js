@@ -101,11 +101,33 @@ router.post('/customers', async (req, res) => {
 router.get('/rooms', async (req, res) => {
   try {
     const minCapacity = parseInt(req.query.minCapacity, 10) || 0;
+    const search = req.query.search || '';
+    const page = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+
+    if (page || limit) {
+      const result = await bookingService.getPaginatedRooms({
+        search,
+        minCapacity,
+        page: page || 1,
+        limit: limit || 6
+      });
+      return res.json({
+        success: true,
+        count: result.rooms.length,
+        data: result.rooms,
+        rooms: result.rooms,
+        ...result
+      });
+    }
+
     const rooms = await bookingService.getRooms(minCapacity);
     res.json({
       success: true,
       count: rooms.length,
-      data: rooms
+      total: rooms.length,
+      data: rooms,
+      rooms
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

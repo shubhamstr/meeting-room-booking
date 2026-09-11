@@ -1,9 +1,33 @@
 document.addEventListener('DOMContentLoaded', () => {
   initCustomerTableApi();
-  initRoomAndSlotBooking();
+  initRoomsDirectory();
+  initRoomAvailability();
   initModals();
   initSyncActions();
 });
+
+// --- Toast / Notification Helper ---
+function showNotification(message, type = 'info') {
+  const existingToast = document.querySelector('.custom-toast-notification');
+  if (existingToast) existingToast.remove();
+
+  const toast = document.createElement('div');
+  toast.className = `custom-toast-notification toast-${type}`;
+  toast.innerHTML = `
+    <i class="fa-solid ${type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info')}"></i>
+    <span>${message}</span>
+  `;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add('show');
+  }, 50);
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
 
 // --- 1. Customer Live API Table Controller (GET /api/customers) ---
 function initCustomerTableApi() {
@@ -207,9 +231,9 @@ function initCustomerTableApi() {
             </span>
           </td>
 
-          <!-- Action: Book Room -->
+          <!-- Action: Book Room (Calls /rooms and opens full-screen cards) -->
           <td style="text-align: right;">
-            <a href="/book?customerId=${encodeURIComponent(cust.id)}" class="btn btn-primary btn-sm table-book-btn">
+            <a href="/rooms?customerId=${encodeURIComponent(cust.id)}" class="btn btn-primary btn-sm table-book-btn">
               <i class="fa-solid fa-calendar-plus"></i>
               <span>Book Room</span>
             </a>
@@ -375,11 +399,617 @@ function initCustomerTableApi() {
     });
   }
 
-  // Initial fetch on page load / browser refresh!
+  // Initial fetch on page load
   fetchCustomers(false);
 
-  // Expose reload method globally so Zoho CRM sync / Calendar sync can refresh table without full reload
   window.reloadCustomersTable = function() {
     fetchCustomers(false);
   };
+}
+
+// --- 2. Full-Screen Rooms Directory Controller (GET /api/rooms with On-Scroll UI) ---
+function initRoomsDirectory() {
+  const roomsGrid = document.getElementById('rooms-grid-container');
+  if (!roomsGrid) return; // Not on rooms directory view
+
+  const searchInput = document.getElementById('rooms-search-input');
+  const capacitySelect = document.getElementById('capacity-filter-select');
+  const refreshBtn = document.getElementById('rooms-refresh-btn');
+  const refreshIcon = document.getElementById('rooms-refresh-icon');
+  const countBadge = document.getElementById('rooms-count-badge');
+  const loadingContainer = document.getElementById('rooms-loading-state');
+  const errorContainer = document.getElementById('rooms-error-state');
+  const emptyState = document.getElementById('rooms-empty-state');
+  const resetBtn = document.getElementById('rooms-clear-filter-btn');
+  const retryBtn = document.getElementById('rooms-retry-btn');
+  const infiniteLoader = document.getElementById('rooms-infinite-loading');
+  const endIndicator = document.getElementById('rooms-end-indicator');
+  const sentinel = document.getElementById('rooms-scroll-sentinel');
+  const customerId = roomsGrid.getAttribute('data-customer-id') || '';
+
+  // Pagination State for on-scroll loading
+  let state = {
+    page: 1,
+    limit: 4, // Page batch size for smooth on-scroll loading
+    search: '',
+    minCapacity: 0,
+    total: 0,
+    totalPages: 1,
+    hasNextPage: true,
+    loading: false,
+    loadingMore: false,
+    renderedRoomIds: new Set()
+  };
+
+  // Main Fetcher for Paginated /api/rooms
+  async function fetchRooms(isAppend = false) {
+    if (isAppend) {
+      if (state.loadingMore || !state.hasNextPage) return;
+      state.loadingMore = true;
+      if (infiniteLoader) infiniteLoader.style.display = 'flex';
+    } else {
+      state.loading = true;
+      state.page = 1;
+      state.renderedRoomIds.clear();
+      showLoading(true);
+      showError(null);
+      if (endIndicator) endIndicator.style.display = 'none';
+      if (refreshIcon) refreshIcon.classList.add('fa-spin');
+    }
+
+    try {
+      const params = new URLSearchParams({
+        page: state.page,
+        limit: state.limit,
+        search: state.search.trim(),
+        minCapacity: state.minCapacity
+      });
+
+      const response = await fetch(`/api/rooms?${params.toString()}`, {
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`API responded with HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const json = await response.json();
+      if (!json.success) {
+        throw new Error(json.error || 'Failed to fetch rooms data.');
+      }
+
+      const rooms = json.data || json.rooms || [];
+      state.total = json.total !== undefined ? json.total : rooms.length;
+      state.totalPages = json.totalPages || Math.max(1, Math.ceil(state.total / state.limit));
+      state.hasNextPage = json.hasNextPage !== undefined ? json.hasNextPage : (state.page < state.totalPages);
+
+      if (!isAppend) {
+        roomsGrid.innerHTML = '';
+      }
+
+      appendRoomCards(rooms, customerId);
+      updateBadge();
+
+      // Show/hide empty state
+      if (!isAppend && state.total === 0) {
+        if (emptyState) emptyState.style.display = 'block';
+        if (roomsGrid) roomsGrid.style.display = 'none';
+      } else {
+        if (emptyState) emptyState.style.display = 'none';
+        if (roomsGrid) roomsGrid.style.display = 'grid';
+      }
+
+      // Show end of list indicator if all items loaded
+      if (!state.hasNextPage && state.total > 0) {
+        if (endIndicator) endIndicator.style.display = 'flex';
+      } else {
+        if (endIndicator) endIndicator.style.display = 'none';
+      }
+
+    } catch (err) {
+      console.error('Error fetching /api/rooms:', err);
+      if (!isAppend) {
+        showError(err.message);
+      } else {
+        showNotification('Error loading more rooms on scroll: ' + err.message, 'error');
+      }
+    } finally {
+      if (isAppend) {
+        state.loadingMore = false;
+        if (infiniteLoader) infiniteLoader.style.display = 'none';
+      } else {
+        state.loading = false;
+        showLoading(false);
+        if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+      }
+    }
+  }
+
+  function appendRoomCards(rooms, custId) {
+    if (!rooms || rooms.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+
+    rooms.forEach(room => {
+      // Avoid duplicate cards if fast scrolling
+      if (state.renderedRoomIds.has(room.id)) return;
+      state.renderedRoomIds.add(room.id);
+
+      const card = document.createElement('div');
+      card.className = 'fullscreen-room-card fade-in-row';
+      card.setAttribute('data-room-id', room.id);
+      card.setAttribute('data-room-name', (room.name || '').toLowerCase());
+      card.setAttribute('data-room-type', (room.type || '').toLowerCase());
+      card.setAttribute('data-room-capacity', room.capacity);
+      card.setAttribute('data-room-floor', (room.floor || '').toLowerCase());
+
+      const amenitiesHtml = (room.amenities || []).map(a => `
+        <span class="room-amenity-pill">
+          <i class="fa-solid fa-check"></i> ${escapeHtml(a)}
+        </span>
+      `).join('');
+
+      card.innerHTML = `
+        <div class="room-image-hero">
+          <img src="${escapeHtml(room.image)}" alt="${escapeHtml(room.name)}" class="room-card-photo" loading="lazy">
+          <div class="room-image-overlay"></div>
+          
+          <div class="room-rate-tag">
+            <span class="rate-currency">$</span>
+            <span class="rate-number">${room.hourlyRate}</span>
+            <span class="rate-unit">/ hr</span>
+          </div>
+
+          <div class="room-top-tags">
+            <span class="room-type-badge">${escapeHtml(room.type)}</span>
+            <span class="room-floor-badge"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(room.floor)}</span>
+          </div>
+
+          <div class="room-capacity-badge">
+            <i class="fa-solid fa-users"></i> ${room.capacity} Seats
+          </div>
+        </div>
+
+        <div class="room-card-content">
+          <div class="room-title-row">
+            <h3 class="room-name">${escapeHtml(room.name)}</h3>
+          </div>
+
+          <p class="room-desc">
+            ${escapeHtml(room.description)}
+          </p>
+
+          <div class="room-amenities-section">
+            <span class="amenities-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Included Amenities</span>
+            <div class="amenities-chips-wrap">
+              ${amenitiesHtml}
+            </div>
+          </div>
+
+          <div class="room-card-footer">
+            <div class="room-quick-meta">
+              <span class="meta-item"><i class="fa-solid fa-bolt" style="color: #67e8f9;"></i> Instant Booking</span>
+              <span class="meta-item"><i class="fa-solid fa-calendar-check" style="color: #6ee7b7;"></i> Live Slots</span>
+            </div>
+
+            <button 
+              type="button" 
+              class="btn btn-primary select-room-btn" 
+              onclick="selectRoomAndRedirect('${escapeHtml(room.id)}', '${escapeHtml(custId)}')"
+            >
+              <span>Check Slots &amp; Availability</span>
+              <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+      `;
+
+      fragment.appendChild(card);
+    });
+
+    roomsGrid.appendChild(fragment);
+  }
+
+  function updateBadge() {
+    if (countBadge) {
+      const renderedCount = state.renderedRoomIds.size;
+      countBadge.innerHTML = `<i class="fa-solid fa-cubes"></i> Showing ${renderedCount} of ${state.total} ${state.total === 1 ? 'Space' : 'Spaces'}`;
+    }
+  }
+
+  function showLoading(loading) {
+    if (loadingContainer) loadingContainer.style.display = loading ? 'flex' : 'none';
+    if (roomsGrid && loading) roomsGrid.style.display = 'none';
+  }
+
+  function showError(msg) {
+    if (!errorContainer) return;
+    if (msg) {
+      errorContainer.style.display = 'block';
+      const msgElem = errorContainer.querySelector('.error-message-text');
+      if (msgElem) msgElem.textContent = msg;
+      if (roomsGrid) roomsGrid.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'none';
+      if (countBadge) countBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error loading rooms`;
+    } else {
+      errorContainer.style.display = 'none';
+    }
+  }
+
+  // --- On-Scroll Intersection Observer for Infinite Loading ---
+  if (sentinel && 'IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && state.hasNextPage && !state.loading && !state.loadingMore) {
+          state.page++;
+          fetchRooms(true);
+        }
+      });
+    }, {
+      rootMargin: '200px'
+    });
+
+    observer.observe(sentinel);
+  } else {
+    // Fallback Scroll Listener
+    let scrollTimeout = null;
+    window.addEventListener('scroll', () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        if (state.hasNextPage && !state.loading && !state.loadingMore) {
+          const scrollPosition = window.innerHeight + window.scrollY;
+          const threshold = document.documentElement.offsetHeight - 400;
+          if (scrollPosition >= threshold) {
+            state.page++;
+            fetchRooms(true);
+          }
+        }
+      }, 100);
+    });
+  }
+
+  // Search input debouncer
+  let debounceTimeout = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      state.search = e.target.value;
+      clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(() => {
+        fetchRooms(false);
+      }, 300);
+    });
+  }
+
+  if (capacitySelect) {
+    capacitySelect.addEventListener('change', (e) => {
+      state.minCapacity = parseInt(e.target.value, 10) || 0;
+      fetchRooms(false);
+    });
+  }
+
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (searchInput) searchInput.value = '';
+      if (capacitySelect) capacitySelect.value = '0';
+      state.search = '';
+      state.minCapacity = 0;
+      fetchRooms(false);
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      fetchRooms(false);
+      showNotification('Refreshing meeting rooms from GET /api/rooms API...', 'success');
+    });
+  }
+
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => {
+      fetchRooms(false);
+    });
+  }
+
+  // Initial fetch on page load!
+  fetchRooms(false);
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+}
+
+// --- 3. Room Availability & Free/Busy Slots Controller (GET /api/rooms/:id/availability) ---
+function initRoomAvailability() {
+  const datePicker = document.getElementById('slot-date-picker');
+  if (!datePicker) return; // Not on room availability view
+
+  const roomId = datePicker.getAttribute('data-room-id');
+  const customerId = datePicker.getAttribute('data-customer-id') || '';
+  const refreshSlotsBtn = document.getElementById('refresh-slots-btn');
+  const refreshSlotsIcon = document.getElementById('refresh-slots-icon');
+  const freeSlotsGrid = document.getElementById('free-slots-grid');
+  const busySlotsGrid = document.getElementById('busy-slots-grid');
+  const freeCountBadge = document.getElementById('free-count-badge');
+  const busyCountBadge = document.getElementById('busy-count-badge');
+  const totalCountBadge = document.getElementById('total-count-badge');
+  const freeHeaderCount = document.getElementById('free-slots-header-count');
+  const busyHeaderCount = document.getElementById('busy-slots-header-count');
+  const apiDateDisplay = document.getElementById('api-date-display');
+  const summaryDateVal = document.getElementById('summary-date-val');
+  const summarySlotVal = document.getElementById('summary-slot-val');
+  const formSlotId = document.getElementById('form-slot-id');
+  const formDate = document.getElementById('form-date');
+  const confirmBtn = document.getElementById('book-slot-confirm-btn');
+  const loadingState = document.getElementById('slots-loading-state');
+  const quickDateBtns = document.querySelectorAll('.quick-date-btn');
+
+  let selectedSlot = null;
+
+  // Helper to format date offset
+  function getDateString(offset = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().split('T')[0];
+  }
+
+  // Fetch slots availability for a given date
+  async function fetchAvailability(targetDate, updateUrl = true) {
+    if (loadingState) loadingState.style.display = 'flex';
+    if (refreshSlotsIcon) refreshSlotsIcon.classList.add('fa-spin');
+
+    try {
+      const endpoint = `/api/rooms/${encodeURIComponent(roomId)}/availability?date=${encodeURIComponent(targetDate)}`;
+      const response = await fetch(endpoint, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned HTTP ${response.status}`);
+      }
+
+      const json = await response.json();
+      if (!json.success) {
+        throw new Error(json.error || 'Failed to fetch slots.');
+      }
+
+      const freeSlots = json.freeSlots || [];
+      const busySlots = json.busySlots || [];
+      const allSlots = json.slots || [];
+
+      // Update date references
+      if (apiDateDisplay) apiDateDisplay.textContent = targetDate;
+      if (summaryDateVal) summaryDateVal.textContent = targetDate;
+      if (formDate) formDate.value = targetDate;
+      if (datePicker) datePicker.value = targetDate;
+
+      // Update counter badges
+      if (freeCountBadge) freeCountBadge.innerHTML = `<i class="fa-solid fa-circle-check"></i> <strong>${freeSlots.length}</strong> Free`;
+      if (busyCountBadge) busyCountBadge.innerHTML = `<i class="fa-solid fa-lock"></i> <strong>${busySlots.length}</strong> Busy`;
+      if (totalCountBadge) totalCountBadge.innerHTML = `<i class="fa-solid fa-clock"></i> <strong>${allSlots.length}</strong> Total`;
+      if (freeHeaderCount) freeHeaderCount.textContent = freeSlots.length;
+      if (busyHeaderCount) busyHeaderCount.textContent = busySlots.length;
+
+      // Reset slot selection on date change
+      selectedSlot = null;
+      if (formSlotId) formSlotId.value = '';
+      if (summarySlotVal) {
+        summarySlotVal.innerHTML = `<i class="fa-solid fa-arrow-pointer"></i> Please pick a slot`;
+        summarySlotVal.classList.remove('active-slot-selected');
+      }
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.classList.remove('pulse-ready');
+      }
+
+      // Render Free Slots
+      renderFreeSlots(freeSlots, json.room ? json.room.hourlyRate : 0);
+
+      // Render Busy Slots
+      renderBusySlots(busySlots);
+
+      if (updateUrl) {
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('date', targetDate);
+        if (customerId) newUrl.searchParams.set('customerId', customerId);
+        window.history.replaceState({}, '', newUrl.toString());
+      }
+    } catch (err) {
+      console.error('Error fetching room availability:', err);
+      showNotification('Error loading slots: ' + err.message, 'error');
+    } finally {
+      if (loadingState) loadingState.style.display = 'none';
+      if (refreshSlotsIcon) refreshSlotsIcon.classList.remove('fa-spin');
+    }
+  }
+
+  function renderFreeSlots(slots, hourlyRate) {
+    if (!freeSlotsGrid) return;
+
+    if (!slots || slots.length === 0) {
+      freeSlotsGrid.innerHTML = `
+        <div class="no-slots-notice">
+          <i class="fa-solid fa-calendar-xmark"></i>
+          <span>No free slots remaining on this day. Please pick a different date above.</span>
+        </div>
+      `;
+      return;
+    }
+
+    freeSlotsGrid.innerHTML = slots.map(slot => `
+      <div 
+        class="modern-slot-card free-slot-card fade-in-row" 
+        data-slot-id="${escapeHtml(slot.id)}" 
+        data-slot-label="${escapeHtml(slot.label)}"
+        data-slot-time="${escapeHtml(slot.time)}"
+        data-slot-period="${escapeHtml(slot.period)}"
+      >
+        <div class="slot-card-top">
+          <span class="slot-period-tag">${escapeHtml(slot.period)}</span>
+          <span class="slot-available-pill">
+            <i class="fa-solid fa-circle-dot"></i> Free
+          </span>
+        </div>
+        <div class="slot-time-display">
+          ${escapeHtml(slot.label)}
+        </div>
+        <div class="slot-card-bottom">
+          <span class="slot-price-hint">$${hourlyRate}/hr</span>
+          <span class="slot-action-text"><i class="fa-solid fa-hand-pointer"></i> Select</span>
+        </div>
+      </div>
+    `).join('');
+
+    bindSlotCardEvents();
+  }
+
+  function renderBusySlots(slots) {
+    if (!busySlotsGrid) return;
+
+    if (!slots || slots.length === 0) {
+      busySlotsGrid.innerHTML = `
+        <div class="all-free-notice">
+          <i class="fa-solid fa-circle-check"></i>
+          <span>All slots are wide open! Room is fully available throughout the entire day.</span>
+        </div>
+      `;
+      return;
+    }
+
+    busySlotsGrid.innerHTML = slots.map(slot => `
+      <div class="modern-slot-card busy-slot-card fade-in-row">
+        <div class="slot-card-top">
+          <span class="slot-period-tag">${escapeHtml(slot.period)}</span>
+          <span class="slot-busy-pill">
+            <i class="fa-solid fa-lock"></i> Reserved
+          </span>
+        </div>
+        <div class="slot-time-display">
+          ${escapeHtml(slot.label)}
+        </div>
+        <div class="slot-card-bottom">
+          <span class="slot-reserved-by" title="${escapeHtml(slot.bookedBy || 'Reserved')}">
+            <i class="fa-solid fa-user"></i> ${escapeHtml(slot.bookedBy || 'Reserved')}
+          </span>
+          <span class="slot-busy-status">Locked</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function bindSlotCardEvents() {
+    const freeCards = document.querySelectorAll('.free-slot-card');
+    freeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        freeCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+
+        const slotId = card.getAttribute('data-slot-id');
+        const slotLabel = card.getAttribute('data-slot-label');
+
+        selectedSlot = { id: slotId, label: slotLabel };
+        if (formSlotId) formSlotId.value = slotId;
+
+        if (summarySlotVal) {
+          summarySlotVal.innerHTML = `<i class="fa-solid fa-clock-check"></i> ${slotLabel}`;
+          summarySlotVal.classList.add('active-slot-selected');
+        }
+
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.classList.add('pulse-ready');
+        }
+
+        const titleInput = document.getElementById('booking-meeting-title');
+        if (titleInput && !titleInput.value.trim()) {
+          titleInput.focus();
+        }
+      });
+    });
+  }
+
+  // Bind date picker changes
+  datePicker.addEventListener('change', (e) => {
+    if (e.target.value) {
+      fetchAvailability(e.target.value);
+    }
+  });
+
+  // Quick date shortcut buttons
+  quickDateBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const offset = parseInt(btn.getAttribute('data-offset') || '0', 10);
+      const targetDate = getDateString(offset);
+      quickDateBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      fetchAvailability(targetDate);
+    });
+  });
+
+  // Refresh button
+  if (refreshSlotsBtn) {
+    refreshSlotsBtn.addEventListener('click', () => {
+      fetchAvailability(datePicker.value);
+      showNotification('Refreshed slot availability', 'success');
+    });
+  }
+
+  // Initial event binding for SSR cards
+  bindSlotCardEvents();
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+}
+
+// --- 4. Modals & Dialogs ---
+function initModals() {
+  const modalTriggers = document.querySelectorAll('[data-modal-target]');
+  const modalCloses = document.querySelectorAll('[data-modal-close]');
+
+  modalTriggers.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-modal-target');
+      const targetModal = document.getElementById(targetId);
+      if (targetModal) {
+        targetModal.classList.add('active');
+      }
+    });
+  });
+
+  modalCloses.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modal = btn.closest('.modal-overlay');
+      if (modal) {
+        modal.classList.remove('active');
+      }
+    });
+  });
+}
+
+// --- 5. CRM & Calendar Sync Triggers ---
+function initSyncActions() {
+  const zohoSyncForm = document.getElementById('zoho-sync-form');
+  if (zohoSyncForm) {
+    zohoSyncForm.addEventListener('submit', () => {
+      const btn = zohoSyncForm.querySelector('button[type="submit"]');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Syncing Zoho CRM...</span>`;
+      }
+    });
+  }
 }

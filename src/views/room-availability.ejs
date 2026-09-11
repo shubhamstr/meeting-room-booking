@@ -1,0 +1,358 @@
+<%- include('layout/header', { title: room.name + ' Availability & Booking', activeTab: 'book', selectedCustomer: customer, successMessage: successMessage, errorMessage: errorMessage }) %>
+
+<div class="availability-container">
+
+  <!-- Active Customer Context Banner -->
+  <% if (customer) { %>
+    <div class="selected-customer-banner">
+      <div class="banner-user-info">
+        <div class="banner-avatar-wrap">
+          <%= customer.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() %>
+        </div>
+        <div class="banner-user-text">
+          <h3>
+            <span><%= customer.name %></span>
+            <span class="active-cust-pill">
+              <i class="fa-solid fa-user-check"></i> Booking Customer
+            </span>
+            <% if (customer.zohoId) { %>
+              <span class="table-zoho-badge" style="font-size: 0.72rem; padding: 0.15rem 0.5rem;">
+                <i class="fa-solid fa-cloud-bolt"></i> Zoho CRM
+              </span>
+            <% } %>
+          </h3>
+          <p>
+            <i class="fa-solid fa-building"></i> <%= customer.company || 'Independent Client' %> &bull; 
+            <i class="fa-regular fa-envelope"></i> <%= customer.email %>
+          </p>
+        </div>
+      </div>
+
+      <div class="banner-actions">
+        <a href="/customers" class="btn btn-secondary btn-sm">
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+          <span>Change Customer</span>
+        </a>
+      </div>
+    </div>
+  <% } %>
+
+  <!-- Selected Room Hero Bar -->
+  <div class="room-hero-card">
+    <div class="room-hero-left">
+      <img src="<%= room.image %>" alt="<%= room.name %>" class="room-hero-thumb">
+      <div class="room-hero-meta">
+        <div class="room-hero-tag-row">
+          <span class="room-type-badge"><%= room.type %></span>
+          <span class="room-floor-badge"><i class="fa-solid fa-location-dot"></i> <%= room.floor %></span>
+          <span class="room-capacity-badge"><i class="fa-solid fa-users"></i> Up to <%= room.capacity %> Seats</span>
+        </div>
+        <h2 class="room-hero-title"><%= room.name %></h2>
+        <p class="room-hero-desc"><%= room.description %></p>
+        <div class="hero-amenities-wrap">
+          <% (room.amenities || []).forEach(a => { %>
+            <span class="hero-amenity-chip"><i class="fa-solid fa-check"></i> <%= a %></span>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+
+    <div class="room-hero-right">
+      <div class="room-price-display">
+        <span class="price-val">$<%= room.hourlyRate %></span>
+        <span class="price-lbl">/ hour</span>
+      </div>
+      <a href="/rooms<%= customer ? `?customerId=${customer.id}` : '' %>" class="btn btn-secondary btn-sm" style="margin-top: 0.5rem; width: 100%;">
+        <i class="fa-solid fa-grid-2"></i>
+        <span>Change Room</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Availability & Booking Layout Grid -->
+  <div class="availability-layout-grid">
+
+    <!-- Left Main Column: Date Picker, Free Slots, Busy Slots -->
+    <div class="slots-main-column">
+
+      <!-- Date Selection & Status Header -->
+      <div class="availability-toolbar-card">
+        <div class="toolbar-header-row">
+          <div>
+            <div class="toolbar-title-wrap">
+              <h3 class="toolbar-title">
+                <i class="fa-solid fa-calendar-day" style="color: var(--primary-400);"></i>
+                Schedule &amp; Availability
+              </h3>
+              <span class="api-endpoint-pill" title="Live slot availability API">
+                <i class="fa-solid fa-code"></i> GET /api/rooms/<%= room.id %>/availability?date=<span id="api-date-display"><%= date %></span>
+              </span>
+            </div>
+            <p class="toolbar-subtitle">Select date to inspect free and busy hourly reservation slots.</p>
+          </div>
+
+          <!-- Slot Counters Breakdown -->
+          <div class="slot-summary-counters">
+            <span class="counter-badge counter-free" id="free-count-badge">
+              <i class="fa-solid fa-circle-check"></i> <strong><%= freeSlots.length %></strong> Free
+            </span>
+            <span class="counter-badge counter-busy" id="busy-count-badge">
+              <i class="fa-solid fa-lock"></i> <strong><%= busySlots.length %></strong> Busy
+            </span>
+            <span class="counter-badge counter-total" id="total-count-badge">
+              <i class="fa-solid fa-clock"></i> <strong><%= slots.length %></strong> Total
+            </span>
+          </div>
+        </div>
+
+        <!-- Date Controls Row -->
+        <div class="date-controls-row">
+          <div class="date-input-group">
+            <label for="slot-date-picker" class="date-input-label">
+              <i class="fa-regular fa-calendar-check"></i> Meeting Date:
+            </label>
+            <input 
+              type="date" 
+              id="slot-date-picker" 
+              class="modern-date-input" 
+              value="<%= date %>" 
+              data-room-id="<%= room.id %>"
+              data-customer-id="<%= customer ? customer.id : '' %>"
+            >
+          </div>
+
+          <!-- Quick Date Shortcut Buttons -->
+          <div class="quick-date-buttons">
+            <button type="button" class="quick-date-btn" data-offset="0">Today</button>
+            <button type="button" class="quick-date-btn" data-offset="1">Tomorrow</button>
+            <button type="button" class="quick-date-btn" data-offset="2">+2 Days</button>
+          </div>
+
+          <button type="button" id="refresh-slots-btn" class="btn btn-secondary btn-sm" title="Re-fetch slot availability from API">
+            <i class="fa-solid fa-arrows-rotate" id="refresh-slots-icon"></i>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Slots Loading Spinner -->
+      <div id="slots-loading-state" class="table-loading-container" style="display: none; margin: 2rem 0;">
+        <div class="loading-spinner-wrap">
+          <i class="fa-solid fa-circle-notch fa-spin loading-spinner-icon"></i>
+        </div>
+        <p class="loading-text">Fetching live slots from <code>GET /api/rooms/<%= room.id %>/availability</code>...</p>
+      </div>
+
+      <!-- SECTION 1: FREE SLOTS (Available for Instant Booking) -->
+      <div class="slots-section-card free-slots-card" id="free-slots-section">
+        <div class="slots-section-header">
+          <div class="section-title-wrap">
+            <span class="status-indicator-dot green"></span>
+            <h4 class="section-title">Available Slots (<span id="free-slots-header-count"><%= freeSlots.length %></span>)</h4>
+          </div>
+          <span class="section-hint">Click an open time slot below to prepare your reservation</span>
+        </div>
+
+        <div class="slots-grid-wrap" id="free-slots-grid">
+          <% if (freeSlots.length === 0) { %>
+            <div class="no-slots-notice">
+              <i class="fa-solid fa-calendar-xmark"></i>
+              <span>No free slots remaining on this day. Please pick a different date.</span>
+            </div>
+          <% } else { %>
+            <% freeSlots.forEach(slot => { %>
+              <div 
+                class="modern-slot-card free-slot-card" 
+                data-slot-id="<%= slot.id %>" 
+                data-slot-label="<%= slot.label %>"
+                data-slot-time="<%= slot.time %>"
+                data-slot-period="<%= slot.period %>"
+              >
+                <div class="slot-card-top">
+                  <span class="slot-period-tag"><%= slot.period %></span>
+                  <span class="slot-available-pill">
+                    <i class="fa-solid fa-circle-dot"></i> Free
+                  </span>
+                </div>
+                <div class="slot-time-display">
+                  <%= slot.label %>
+                </div>
+                <div class="slot-card-bottom">
+                  <span class="slot-price-hint">$<%= room.hourlyRate %>/hr</span>
+                  <span class="slot-action-text"><i class="fa-solid fa-hand-pointer"></i> Select</span>
+                </div>
+              </div>
+            <% }) %>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- SECTION 2: BUSY SLOTS (Already Booked) -->
+      <div class="slots-section-card busy-slots-card" id="busy-slots-section">
+        <div class="slots-section-header">
+          <div class="section-title-wrap">
+            <span class="status-indicator-dot red"></span>
+            <h4 class="section-title">Reserved / Busy Slots (<span id="busy-slots-header-count"><%= busySlots.length %></span>)</h4>
+          </div>
+          <span class="section-hint">Unavailable time slots already reserved in PostgreSQL</span>
+        </div>
+
+        <div class="slots-grid-wrap" id="busy-slots-grid">
+          <% if (busySlots.length === 0) { %>
+            <div class="all-free-notice">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>All slots are wide open! Room is fully available throughout the entire day.</span>
+            </div>
+          <% } else { %>
+            <% busySlots.forEach(slot => { %>
+              <div class="modern-slot-card busy-slot-card">
+                <div class="slot-card-top">
+                  <span class="slot-period-tag"><%= slot.period %></span>
+                  <span class="slot-busy-pill">
+                    <i class="fa-solid fa-lock"></i> Reserved
+                  </span>
+                </div>
+                <div class="slot-time-display">
+                  <%= slot.label %>
+                </div>
+                <div class="slot-card-bottom">
+                  <span class="slot-reserved-by" title="<%= slot.bookedBy || 'Reserved' %>">
+                    <i class="fa-solid fa-user"></i> <%= slot.bookedBy || 'Reserved' %>
+                  </span>
+                  <span class="slot-busy-status">Locked</span>
+                </div>
+              </div>
+            <% }) %>
+          <% } %>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Booking Confirmation Sidebar / Drawer -->
+    <aside class="booking-drawer-column">
+      <form action="/book" method="POST" id="confirm-booking-form" class="booking-drawer-card">
+        <input type="hidden" name="customerId" id="form-customer-id" value="<%= customer ? customer.id : '' %>">
+        <input type="hidden" name="roomId" id="form-room-id" value="<%= room.id %>">
+        <input type="hidden" name="date" id="form-date" value="<%= date %>">
+        <input type="hidden" name="slotId" id="form-slot-id" value="">
+
+        <div class="drawer-header">
+          <h3 class="drawer-title">
+            <i class="fa-solid fa-receipt" style="color: var(--primary-400);"></i>
+            Reservation Summary
+          </h3>
+          <span class="live-pricing-badge">Instant Sync</span>
+        </div>
+
+        <div class="drawer-summary-box">
+          <div class="summary-line">
+            <span class="summary-key">Customer</span>
+            <strong class="summary-val" id="summary-cust-name"><%= customer ? customer.name : 'Not selected' %></strong>
+          </div>
+          <div class="summary-line">
+            <span class="summary-key">Organization</span>
+            <span class="summary-val" id="summary-cust-org"><%= customer ? customer.company : '-' %></span>
+          </div>
+          
+          <div class="summary-divider"></div>
+
+          <div class="summary-line">
+            <span class="summary-key">Space</span>
+            <strong class="summary-val" id="summary-room-name"><%= room.name %></strong>
+          </div>
+          <div class="summary-line">
+            <span class="summary-key">Date</span>
+            <strong class="summary-val highlight-date" id="summary-date-val"><%= date %></strong>
+          </div>
+          <div class="summary-line">
+            <span class="summary-key">Selected Slot</span>
+            <strong class="summary-val slot-highlight-text" id="summary-slot-val">
+              <i class="fa-solid fa-arrow-pointer"></i> Please pick a slot
+            </strong>
+          </div>
+
+          <div class="summary-divider"></div>
+
+          <div class="summary-total-line">
+            <span class="total-key">Total (1 Hour)</span>
+            <span class="total-price" id="summary-price-total">$<%= room.hourlyRate %></span>
+          </div>
+        </div>
+
+        <!-- Meeting Form Details -->
+        <div class="drawer-form-body">
+          <div class="form-group-sm">
+            <label class="drawer-label" for="booking-meeting-title">Meeting Title / Purpose *</label>
+            <input 
+              type="text" 
+              id="booking-meeting-title" 
+              name="title" 
+              class="drawer-input" 
+              placeholder="e.g. Q4 Strategy Review" 
+              required
+            >
+          </div>
+
+          <div class="form-group-row">
+            <div class="form-group-sm">
+              <label class="drawer-label" for="booking-attendee-count">Attendees</label>
+              <input 
+                type="number" 
+                id="booking-attendee-count" 
+                name="attendees" 
+                class="drawer-input" 
+                value="4" 
+                min="1" 
+                max="<%= room.capacity %>"
+              >
+            </div>
+            <div class="form-group-sm">
+              <label class="drawer-label" for="booking-room-cap">Room Limit</label>
+              <input 
+                type="text" 
+                id="booking-room-cap" 
+                class="drawer-input" 
+                value="<%= room.capacity %> Seats" 
+                readonly 
+                disabled
+              >
+            </div>
+          </div>
+
+          <div class="form-group-sm">
+            <label class="drawer-label" for="booking-notes-input">Notes / Setup Requests</label>
+            <textarea 
+              id="booking-notes-input" 
+              name="notes" 
+              rows="2" 
+              class="drawer-textarea" 
+              placeholder="e.g. HDMI dongle, whiteboard markers, coffee service"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="drawer-submit-wrap">
+          <button 
+            type="submit" 
+            id="book-slot-confirm-btn" 
+            class="btn btn-primary btn-lg drawer-btn" 
+            disabled
+          >
+            <i class="fa-solid fa-calendar-check"></i>
+            <span>Confirm &amp; Book Room</span>
+          </button>
+          
+          <p class="drawer-guarantee-note">
+            <i class="fa-solid fa-shield-halved"></i>
+            Saved to PostgreSQL &amp; synced to Google Calendar automatically.
+          </p>
+        </div>
+      </form>
+    </aside>
+
+  </div>
+
+</div>
+
+<%- include('layout/footer') %>

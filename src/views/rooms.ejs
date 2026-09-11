@@ -1,0 +1,179 @@
+<%- include('layout/header', { title: 'Select Meeting Room', activeTab: 'book', selectedCustomer: customer, successMessage: successMessage, errorMessage: errorMessage, infoMessage: infoMessage }) %>
+
+<div class="rooms-fullscreen-container">
+
+  <!-- Active Customer Context Banner -->
+  <% if (customer) { %>
+    <div class="selected-customer-banner">
+      <div class="banner-user-info">
+        <div class="banner-avatar-wrap">
+          <%= customer.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() %>
+        </div>
+        <div class="banner-user-text">
+          <h3>
+            <span><%= customer.name %></span>
+            <span class="active-cust-pill">
+              <i class="fa-solid fa-user-check"></i> Active Customer
+            </span>
+            <% if (customer.zohoId) { %>
+              <span class="table-zoho-badge" style="font-size: 0.72rem; padding: 0.15rem 0.5rem;">
+                <i class="fa-solid fa-cloud-bolt"></i> Zoho CRM
+              </span>
+            <% } %>
+          </h3>
+          <p>
+            <i class="fa-solid fa-building"></i> <%= customer.company || 'Independent Client' %> &bull; 
+            <i class="fa-regular fa-envelope"></i> <%= customer.email %>
+          </p>
+        </div>
+      </div>
+
+      <div class="banner-actions">
+        <a href="/customers" class="btn btn-secondary btn-sm">
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+          <span>Change Customer</span>
+        </a>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="selected-customer-banner warning-banner">
+      <div class="banner-user-info">
+        <div class="banner-avatar-wrap warning-avatar">
+          <i class="fa-solid fa-user-slash"></i>
+        </div>
+        <div class="banner-user-text">
+          <h3>No Customer Selected</h3>
+          <p>Please choose a customer profile from the directory to assign this reservation.</p>
+        </div>
+      </div>
+      <div>
+        <a href="/customers" class="btn btn-primary btn-sm">
+          <i class="fa-solid fa-users"></i>
+          <span>Pick Customer</span>
+        </a>
+      </div>
+    </div>
+  <% } %>
+
+  <!-- Page Header & Live API Pill -->
+  <div class="rooms-header-section">
+    <div class="rooms-title-block">
+      <div class="title-with-pill">
+        <h1 class="rooms-main-title">
+          <i class="fa-solid fa-door-open title-icon"></i>
+          Available Meeting Spaces
+        </h1>
+        <span class="api-endpoint-pill" id="rooms-api-pill" title="Live data endpoint">
+          <i class="fa-solid fa-code"></i> GET /api/rooms
+        </span>
+        <span class="total-count-badge" id="rooms-count-badge">
+          <i class="fa-solid fa-circle-notch fa-spin"></i> Loading rooms...
+        </span>
+      </div>
+      <p class="rooms-subtitle">
+        Explore premium conference halls, executive boardrooms, and focus pods. Click any room card to check real-time availability and slots for today.
+      </p>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div class="rooms-toolbar">
+      <div class="rooms-search-box">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input 
+          type="text" 
+          id="rooms-search-input" 
+          placeholder="Search by room name, type, or floor..."
+          autocomplete="off"
+        >
+      </div>
+
+      <div class="rooms-capacity-filter">
+        <label for="capacity-filter-select"><i class="fa-solid fa-users"></i> Min Capacity:</label>
+        <select id="capacity-filter-select" class="capacity-select">
+          <option value="0" selected>All Sizes</option>
+          <option value="4">4+ seats</option>
+          <option value="8">8+ seats</option>
+          <option value="12">12+ seats</option>
+          <option value="20">20+ seats</option>
+        </select>
+      </div>
+
+      <button type="button" id="rooms-refresh-btn" class="btn btn-secondary btn-sm" title="Re-fetch rooms via GET /api/rooms">
+        <i class="fa-solid fa-arrows-rotate" id="rooms-refresh-icon"></i>
+        <span>Refresh</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Loading State Skeleton -->
+  <div id="rooms-loading-state" class="table-loading-container" style="margin: 3rem 0;">
+    <div class="loading-spinner-wrap">
+      <i class="fa-solid fa-circle-notch fa-spin loading-spinner-icon"></i>
+    </div>
+    <p class="loading-text">Calling <code>GET /api/rooms</code> API to load meeting rooms...</p>
+  </div>
+
+  <!-- Error State Card -->
+  <div id="rooms-error-state" class="directory-empty-card directory-error-card" style="display: none; margin: 3rem 0;">
+    <div class="empty-icon-circle error-circle">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+    </div>
+    <h3 class="empty-title">Error Loading Rooms</h3>
+    <p class="empty-desc error-message-text">Failed to fetch rooms from GET /api/rooms API.</p>
+    <button type="button" class="btn btn-primary btn-sm" id="rooms-retry-btn">
+      <i class="fa-solid fa-rotate-right"></i>
+      <span>Retry API Call</span>
+    </button>
+  </div>
+
+  <!-- Fullscreen Room Cards Grid (Populated dynamically via GET /api/rooms API with on-scroll pagination) -->
+  <div class="fullscreen-rooms-grid" id="rooms-grid-container" data-customer-id="<%= customer ? customer.id : '' %>" style="display: none;">
+    <!-- Dynamically loaded via GET /api/rooms API -->
+  </div>
+
+  <!-- On-Scroll Infinite Loading Spinner Indicator -->
+  <div id="rooms-infinite-loading" class="infinite-scroll-loader" style="display: none;">
+    <div class="infinite-spinner-ring">
+      <i class="fa-solid fa-circle-notch fa-spin"></i>
+    </div>
+    <span class="infinite-spinner-text">Loading more meeting spaces via <code>/api/rooms</code>...</span>
+  </div>
+
+  <!-- End of List Indicator -->
+  <div id="rooms-end-indicator" class="end-of-list-card" style="display: none;">
+    <div class="end-pill">
+      <i class="fa-solid fa-check-circle"></i>
+      <span>All available rooms loaded</span>
+    </div>
+  </div>
+
+  <!-- Scroll Sentinel Element for IntersectionObserver -->
+  <div id="rooms-scroll-sentinel" style="height: 20px; margin-top: 10px;"></div>
+
+  <!-- Empty Results State -->
+  <div id="rooms-empty-state" class="directory-empty-card" style="display: none; margin: 3rem 0;">
+    <div class="empty-icon-circle">
+      <i class="fa-solid fa-door-closed"></i>
+    </div>
+    <h3 class="empty-title">No Meeting Rooms Match Your Criteria</h3>
+    <p class="empty-desc">Try loosening your search filters or capacity limit.</p>
+    <button type="button" class="btn btn-secondary btn-sm" id="rooms-clear-filter-btn">
+      <i class="fa-solid fa-rotate-left"></i>
+      <span>Reset Filters</span>
+    </button>
+  </div>
+
+</div>
+
+<script>
+  function selectRoomAndRedirect(roomId, customerId) {
+    const today = new Date().toISOString().split('T')[0];
+    let url = `/rooms/${encodeURIComponent(roomId)}/availability?date=${today}`;
+    if (customerId) {
+      url += `&customerId=${encodeURIComponent(customerId)}`;
+    }
+    window.location.href = url;
+  }
+</script>
+
+<%- include('layout/footer') %>
