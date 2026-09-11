@@ -1,0 +1,2165 @@
+openapi: 3.0.3
+info:
+  title: TurboSpace Meeting Room Booking & CRM/Calendar Sync API
+  description: |
+    Comprehensive RESTful API for **TurboSpace Meeting Room Booking System**.
+    
+    Includes full endpoint specifications for:
+    - Customer Directory & Management (PostgreSQL & Zoho CRM synced)
+    - Meeting Room Inventory & Dynamic Slot Availability
+    - ACID-Compliant Concurrent Booking Reservations & Cancellations
+    - Zoho CRM OAuth 2.0 & Developer Token Synchronization
+    - Google Calendar Two-Way Event Sync & Multi-Calendar Management
+    - Asynchronous PostgreSQL Job Queues with Automatic Background Retries
+    
+    **Compatible with Postman Collection Import (OpenAPI 3.0+).**
+  version: 1.0.0
+  contact:
+    name: TurboSpace API Support
+    email: support@turbospace.local
+servers:
+  - url: http://localhost:5000
+    description: Local Development Server
+  - url: http://127.0.0.1:5000
+    description: Loopback Development Server
+
+tags:
+  - name: System & Health
+    description: Health monitoring and diagnostic endpoints
+  - name: Customers
+    description: Customer profile management and directory lookups
+  - name: Rooms & Availability
+    description: Physical meeting rooms inventory and real-time slot availability
+  - name: Bookings
+    description: Reservation lifecycle management, slot allocations, and cancellations
+  - name: Background Queues
+    description: Asynchronous retry queues for external integration tasks
+  - name: Zoho CRM Integration
+    description: Zoho CRM OAuth 2.0 authentication, contact import, and synchronization
+  - name: Google Calendar Integration
+    description: Google Calendar OAuth 2.0, event syncing, and shared calendar controls
+
+paths:
+  # ---------------------------------------------------------------------------
+  # 1. System & Health
+  # ---------------------------------------------------------------------------
+  /api/health:
+    get:
+      tags:
+        - System & Health
+      summary: API & System Health Check
+      description: Returns the real-time operational status of the server, PostgreSQL database connection, active stats, and external integrations (Zoho CRM & Google Calendar).
+      operationId: getSystemHealth
+      responses:
+        '200':
+          description: System is healthy and operational
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: UP
+                service: TurboSpace Meeting Room Booking API
+                database: PostgreSQL Connected
+                timestamp: '2026-09-11T10:45:00.000Z'
+                uptime: 3600.42
+                stats:
+                  totalCustomers: 15
+                  totalRooms: 5
+                  activeBookings: 8
+                  todayBookingsCount: 3
+                  totalRevenue: 520
+                integrations:
+                  zoho:
+                    connected: true
+                    dataCenter: INDataCenter
+                    authType: oauth
+                    expiresAt: '2026-09-11T12:00:00.000Z'
+                  googleCalendar:
+                    connected: true
+                    userEmail: admin@turbospace.com
+                    calendarId: primary
+                    calendarName: Primary Calendar
+        '500':
+          description: System or database degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/oauth:
+    get:
+      tags:
+        - System & Health
+      summary: Google OAuth Callback Alias
+      description: Alternative endpoint for handling Google OAuth callback redirects and exchanging authorization code for access and refresh tokens.
+      operationId: handleOAuthCallbackAlias
+      parameters:
+        - name: code
+          in: query
+          description: Authorization code returned by Google OAuth
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          description: Error code if authentication was cancelled or failed
+          required: false
+          schema:
+            type: string
+        - name: error_description
+          in: query
+          description: Detailed explanation of the OAuth error
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirects to UI with success or error flash message
+
+  /api/zoho-redirect:
+    get:
+      tags:
+        - System & Health
+      summary: Zoho Redirect Alias
+      description: Redirect endpoint for forwarding Zoho CRM OAuth authorization requests to the main callback handler.
+      operationId: handleZohoRedirectAlias
+      parameters:
+        - name: code
+          in: query
+          description: Zoho authorization grant code
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirects to `/api/zoho/callback`
+
+  # ---------------------------------------------------------------------------
+  # 2. Customers API
+  # ---------------------------------------------------------------------------
+  /api/customers:
+    get:
+      tags:
+        - Customers
+      summary: List Customers
+      description: Retrieve all customers or a paginated list with optional full-text search filtering across names and emails.
+      operationId: getCustomers
+      parameters:
+        - name: search
+          in: query
+          description: Filter customers by name or email (case-insensitive substring match)
+          required: false
+          schema:
+            type: string
+            example: Alice
+        - name: page
+          in: query
+          description: Page number for pagination (starts at 1)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of records per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: List of customers retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerListResponse'
+              example:
+                success: true
+                count: 2
+                total: 2
+                data:
+                  - id: cust-1
+                    zohoId: '542000000123456'
+                    name: Alice Johnson
+                    email: alice.johnson@apexcorp.com
+                    company: Apex Innovations
+                    createdAt: '2026-09-10T08:30:00.000Z'
+                    updatedAt: '2026-09-10T08:30:00.000Z'
+                    bookingCount: 3
+                  - id: cust-2
+                    zohoId: null
+                    name: Bob Smith
+                    email: bob.smith@techflow.io
+                    company: TechFlow Solutions
+                    createdAt: '2026-09-11T09:15:00.000Z'
+                    updatedAt: '2026-09-11T09:15:00.000Z'
+                    bookingCount: 1
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Customers
+      summary: Create New Customer Profile
+      description: Add a new customer directly into PostgreSQL database.
+      operationId: createCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreateInput'
+            example:
+              name: Sarah Connor
+              email: sarah.connor@cyberdyne.io
+              company: Cyberdyne Systems
+      responses:
+        '201':
+          description: Customer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSingleResponse'
+              example:
+                success: true
+                message: Customer added successfully to PostgreSQL
+                data:
+                  id: cust-1726052345678
+                  zohoId: null
+                  name: Sarah Connor
+                  email: sarah.connor@cyberdyne.io
+                  company: Cyberdyne Systems
+                  createdAt: '2026-09-11T10:50:00.000Z'
+                  updatedAt: '2026-09-11T10:50:00.000Z'
+        '400':
+          description: Validation error (missing required fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server or database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # 3. Rooms & Availability API
+  # ---------------------------------------------------------------------------
+  /api/rooms:
+    get:
+      tags:
+        - Rooms & Availability
+      summary: List Meeting Rooms
+      description: Retrieve meeting room inventory with amenities, capacity, hourly rate, and optional pagination or capacity filtering.
+      operationId: getRooms
+      parameters:
+        - name: minCapacity
+          in: query
+          description: Filter rooms accommodating at least this number of attendees
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            example: 6
+        - name: search
+          in: query
+          description: Filter rooms by name or type
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of meeting rooms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomListResponse'
+              example:
+                success: true
+                count: 2
+                data:
+                  - id: room-1
+                    name: Apollo Executive Boardroom
+                    floor: Floor 4 (North Wing)
+                    capacity: 16
+                    hourlyRate: 75
+                    type: Boardroom
+                    description: Executive conference room with 4K video conferencing, dual presentation screens, and city views.
+                    image: https://images.unsplash.com/photo-1517502884422-41eaead166d4?w=600&auto=format&fit=crop&q=80
+                    amenities:
+                      - 4K Video Conferencing
+                      - Dual 75" Displays
+                      - Smart Whiteboard
+                      - Wireless Presentation
+                      - High-Speed Wi-Fi
+                      - Coffee Machine
+                  - id: room-2
+                    name: Zenith Strategy Hub
+                    floor: Floor 3 (East Wing)
+                    capacity: 10
+                    hourlyRate: 50
+                    type: Meeting Room
+                    description: Modern collaborative space ideal for team sprint planning and workshops.
+                    image: https://images.unsplash.com/photo-1497366216548-37526070297c?w=600&auto=format&fit=crop&q=80
+                    amenities:
+                      - 65" Ultra-HD Display
+                      - Interactive Whiteboard
+                      - Polycom Speakerphone
+                      - Glass Whiteboard Wall
+                      - High-Speed Wi-Fi
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/rooms/{id}/availability:
+    get:
+      tags:
+        - Rooms & Availability
+      summary: Get Room Availability & Slots
+      description: Returns static 1-hour time slots for a specific room and date, showing real-time `isAvailable`, `freeSlots`, and `busySlots`.
+      operationId: getRoomAvailability
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Room ID (e.g., `room-1`)
+          schema:
+            type: string
+            example: room-1
+        - name: date
+          in: query
+          required: false
+          description: Target date in `YYYY-MM-DD` format (defaults to current date)
+          schema:
+            type: string
+            format: date
+            example: '2026-09-11'
+      responses:
+        '200':
+          description: Room slot availability computed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomAvailabilityResponse'
+              example:
+                success: true
+                room:
+                  id: room-1
+                  name: Apollo Executive Boardroom
+                  floor: Floor 4 (North Wing)
+                  capacity: 16
+                  hourlyRate: 75
+                date: '2026-09-11'
+                slots:
+                  - id: '09:00-10:00'
+                    label: 09:00 AM - 10:00 AM
+                    startTime: '09:00'
+                    endTime: '10:00'
+                    time: 09:00 AM
+                    period: Morning
+                    isAvailable: true
+                  - id: '10:00-11:00'
+                    label: 10:00 AM - 11:00 AM
+                    startTime: '10:00'
+                    endTime: '11:00'
+                    time: 10:00 AM
+                    period: Morning
+                    isAvailable: false
+                    booking:
+                      id: BKG-1726050000-1234
+                      title: Executive Strategy Meeting
+                      customerName: Alice Johnson
+                      customerCompany: Apex Innovations
+                      status: Confirmed
+                freeSlots:
+                  - id: '09:00-10:00'
+                    label: 09:00 AM - 10:00 AM
+                    startTime: '09:00'
+                    endTime: '10:00'
+                    isAvailable: true
+                busySlots:
+                  - id: '10:00-11:00'
+                    label: 10:00 AM - 11:00 AM
+                    startTime: '10:00'
+                    endTime: '11:00'
+                    isAvailable: false
+        '404':
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/slots:
+    get:
+      tags:
+        - Rooms & Availability
+      summary: Dynamic Slot Availability Query
+      description: Fast helper endpoint to fetch in-memory time slots merged with live availability for any specified room and date.
+      operationId: getSlots
+      parameters:
+        - name: roomId
+          in: query
+          required: true
+          description: Target Room ID
+          schema:
+            type: string
+            example: room-1
+        - name: date
+          in: query
+          required: false
+          description: Target Date in `YYYY-MM-DD`
+          schema:
+            type: string
+            format: date
+            example: '2026-09-11'
+      responses:
+        '200':
+          description: Slots array with availability
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  slots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TimeSlot'
+        '400':
+          description: Missing required roomId parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # 4. Bookings API
+  # ---------------------------------------------------------------------------
+  /api/bookings:
+    get:
+      tags:
+        - Bookings
+      summary: List Bookings
+      description: Retrieve bookings with rich customer and room joins. Supports filtering by customer, room, status, single date, or date ranges.
+      operationId: getBookings
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Filter by customer name, company, or room name
+          schema:
+            type: string
+        - name: customerId
+          in: query
+          required: false
+          description: Filter by specific customer ID
+          schema:
+            type: string
+            example: cust-1
+        - name: roomId
+          in: query
+          required: false
+          description: Filter by specific room ID
+          schema:
+            type: string
+            example: room-1
+        - name: status
+          in: query
+          required: false
+          description: Booking status filter
+          schema:
+            type: string
+            enum: [Confirmed, Cancelled]
+            example: Confirmed
+        - name: date
+          in: query
+          required: false
+          description: Exact reservation date (`YYYY-MM-DD`)
+          schema:
+            type: string
+            format: date
+            example: '2026-09-11'
+        - name: startDate
+          in: query
+          required: false
+          description: Start of date range (`YYYY-MM-DD`)
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: false
+          description: End of date range (`YYYY-MM-DD`)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Bookings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+              example:
+                success: true
+                count: 1
+                data:
+                  - id: BKG-1726050000-1234
+                    customerId: cust-1
+                    customerName: Alice Johnson
+                    customerEmail: alice.johnson@apexcorp.com
+                    customerCompany: Apex Innovations
+                    roomId: room-1
+                    roomName: Apollo Executive Boardroom
+                    roomFloor: Floor 4 (North Wing)
+                    roomType: Boardroom
+                    roomCapacity: 16
+                    roomHourlyRate: 75
+                    date: '2026-09-11'
+                    startTime: '10:00'
+                    endTime: '11:00'
+                    slotLabel: 10:00 AM - 11:00 AM
+                    title: Executive Strategy Meeting
+                    attendees: 8
+                    notes: Bring product roadmap slides
+                    totalCost: 75.00
+                    status: Confirmed
+                    googleEventId: gcal_event_abc123xyz
+                    createdAt: '2026-09-11T09:30:00.000Z'
+                    updatedAt: '2026-09-11T09:30:00.000Z'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Bookings
+      summary: Create Meeting Room Reservation
+      description: |
+        Reserves a meeting room with ACID transaction locking to prevent concurrent double-booking conflicts.
+        
+        - If Google Calendar is connected, automatically creates an event and persists `googleEventId`.
+        - If Google Calendar is disconnected or fails, gracefully enqueues a background job in PostgreSQL `queues` table for automatic retry.
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreateInput'
+            example:
+              customerId: cust-1
+              roomId: room-1
+              date: '2026-09-11'
+              start: '14:00'
+              end: '15:00'
+              purpose: Q3 Financial Review
+              attendees: 6
+              notes: Projector and conference audio required
+      responses:
+        '201':
+          description: Reservation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingCreateResponse'
+              example:
+                success: true
+                message: Meeting room "Apollo Executive Boardroom" booked successfully and synced to Google Calendar!
+                data:
+                  id: BKG-1726053000-5678
+                  customerId: cust-1
+                  customerName: Alice Johnson
+                  customerEmail: alice.johnson@apexcorp.com
+                  customerCompany: Apex Innovations
+                  roomId: room-1
+                  roomName: Apollo Executive Boardroom
+                  date: '2026-09-11'
+                  startTime: '14:00'
+                  endTime: '15:00'
+                  slotLabel: 02:00 PM - 03:00 PM
+                  title: Q3 Financial Review
+                  attendees: 6
+                  notes: Projector and conference audio required
+                  totalCost: 75.00
+                  status: Confirmed
+                  googleEventId: gcal_event_987654321
+                calendarSynced: true
+                calendarQueued: false
+        '400':
+          description: Validation error or double-booking slot collision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: 'Conflict: "Apollo Executive Boardroom" is already reserved from 02:00 PM - 03:00 PM on 2026-09-11 by Alice Johnson.'
+
+  /api/bookings/{id}/cancel:
+    post:
+      tags:
+        - Bookings
+      summary: Cancel Reservation
+      description: Cancels an existing booking, sets status to `Cancelled`, and immediately removes the synced event from Google Calendar if present.
+      operationId: cancelBooking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Booking ID (e.g., `BKG-1726050000-1234`)
+          schema:
+            type: string
+            example: BKG-1726050000-1234
+      responses:
+        '200':
+          description: Booking cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingCancelResponse'
+              example:
+                success: true
+                message: Booking BKG-1726050000-1234 cancelled successfully. Associated event removed from Google Calendar.
+                data:
+                  id: BKG-1726050000-1234
+                  status: Cancelled
+                  googleEventId: null
+                  calendarDeleted: true
+                calendarDeleted: true
+        '400':
+          description: Booking not found or already cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # 5. Background Queues API
+  # ---------------------------------------------------------------------------
+  /api/queues:
+    get:
+      tags:
+        - Background Queues
+      summary: List Background Queue Jobs
+      description: Retrieve asynchronous background synchronization jobs from PostgreSQL `queues` table with optional filtering.
+      operationId: getQueues
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by job status
+          schema:
+            type: string
+            enum: [PENDING, COMPLETED, FAILED]
+            example: PENDING
+        - name: type
+          in: query
+          required: false
+          description: Filter by job type
+          schema:
+            type: string
+            enum: [GOOGLE_CALENDAR_EVENT, GOOGLE_CALENDAR_DELETE_EVENT, ZOHO_CRM_SYNC]
+            example: GOOGLE_CALENDAR_EVENT
+        - name: limit
+          in: query
+          required: false
+          description: Max records to return
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Queue jobs list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueListResponse'
+              example:
+                success: true
+                count: 1
+                data:
+                  - id: Q-CAL-1726051234-5678
+                    type: GOOGLE_CALENDAR_EVENT
+                    status: PENDING
+                    attempts: 1
+                    maxAttempts: 5
+                    errorMessage: Google Calendar not connected
+                    payload:
+                      bookingId: BKG-1726050000-1234
+                      roomId: room-1
+                      roomName: Apollo Executive Boardroom
+                      date: '2026-09-11'
+                      startTime: '10:00'
+                      endTime: '11:00'
+                    createdAt: '2026-09-11T10:00:00.000Z'
+                    updatedAt: '2026-09-11T10:00:00.000Z'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/queues/process:
+    post:
+      tags:
+        - Background Queues
+      summary: Trigger Queue Processor
+      description: Manually trigger the background queue worker to immediately process pending jobs.
+      operationId: processQueues
+      responses:
+        '200':
+          description: Queue processing batch completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Processed pending queues
+                  data:
+                    type: object
+                    properties:
+                      processed:
+                        type: integer
+                        example: 2
+                      succeeded:
+                        type: integer
+                        example: 2
+                      failed:
+                        type: integer
+                        example: 0
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/queues/{id}/retry:
+    post:
+      tags:
+        - Background Queues
+      summary: Retry Failed Queue Job
+      description: Resets a specific failed or dead-letter queue job back to `PENDING` status for immediate reprocessing.
+      operationId: retryQueueJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Queue Job ID (e.g., `Q-CAL-1726051234-5678`)
+          schema:
+            type: string
+            example: Q-CAL-1726051234-5678
+      responses:
+        '200':
+          description: Job reset and scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Queue job Q-CAL-1726051234-5678 reset to PENDING and scheduled for processing.
+                  data:
+                    $ref: '#/components/schemas/QueueJob'
+        '400':
+          description: Queue job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # 6. Zoho CRM Integration API
+  # ---------------------------------------------------------------------------
+  /api/zoho/connect:
+    get:
+      tags:
+        - Zoho CRM Integration
+      summary: Initiate Zoho CRM OAuth Flow
+      description: Returns the generated Zoho OAuth authorization URL or redirects browser to Zoho Accounts sign-in page.
+      operationId: connectZoho
+      parameters:
+        - name: dc
+          in: query
+          required: false
+          description: Zoho Data Center region key
+          schema:
+            type: string
+            enum: [INDataCenter, USDataCenter, EUDataCenter, AUDataCenter, JPDataCenter, CNDataCenter, CADataCenter, SADataCenter]
+            default: INDataCenter
+            example: INDataCenter
+      responses:
+        '200':
+          description: Auth URL returned for API/JSON client
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  authUrl:
+                    type: string
+                    example: https://accounts.zoho.in/oauth/v2/auth?scope=ZohoCRM.modules.ALL,ZohoCRM.users.READ&client_id=1000.EXAMPLE...
+                  redirectUri:
+                    type: string
+                    example: http://localhost:5000/api/zoho/callback
+                  dataCenter:
+                    type: string
+                    example: INDataCenter
+        '302':
+          description: Redirects browser to Zoho OAuth authorization page
+        '400':
+          description: Missing Zoho Client ID configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/zoho/callback:
+    get:
+      tags:
+        - Zoho CRM Integration
+      summary: Zoho CRM OAuth Callback
+      description: Handles authorization code exchange from Zoho Accounts, stores tokens securely in persistence storage, and establishes connection.
+      operationId: handleZohoCallback
+      parameters:
+        - name: code
+          in: query
+          required: false
+          description: Authorization Grant code returned by Zoho
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: Error code if OAuth was rejected
+          schema:
+            type: string
+        - name: error_description
+          in: query
+          required: false
+          description: Error description
+          schema:
+            type: string
+        - name: location
+          in: query
+          required: false
+          description: Accounts server location hint
+          schema:
+            type: string
+        - name: accounts-server
+          in: query
+          required: false
+          description: Explicit accounts server host returned by Zoho
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully connected to Zoho CRM
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Successfully connected to Apex Global Corp
+                  data:
+                    $ref: '#/components/schemas/ZohoConnectionStatus'
+        '302':
+          description: Redirects browser back to `/customers` view with flash message
+        '400':
+          description: Authorization code missing or access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/zoho/token-connect:
+    post:
+      tags:
+        - Zoho CRM Integration
+      summary: Connect via Zoho Developer Self-Client Token
+      description: Allows direct connection using a Zoho Self-Client Grant Token or long-lived Refresh Token without initiating the full OAuth browser redirect.
+      operationId: connectZohoToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  description: Zoho Grant Code or Refresh Token
+                  example: 1000.a1b2c3d4e5f6...
+                tokenType:
+                  type: string
+                  enum: [grant, refresh]
+                  default: grant
+                  example: grant
+                dcKey:
+                  type: string
+                  default: INDataCenter
+                  example: INDataCenter
+      responses:
+        '200':
+          description: Successfully connected via Developer Token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Zoho CRM connected successfully via Developer Token!
+        '400':
+          description: Invalid token provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/zoho/sync:
+    get:
+      tags:
+        - Zoho CRM Integration
+      summary: Sync Contacts & Leads from Zoho CRM (GET Alias)
+      description: Trigger synchronization of Contacts and Leads from Zoho CRM into the local PostgreSQL database.
+      operationId: syncZohoContactsGet
+      responses:
+        '200':
+          description: Sync results summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZohoSyncResponse'
+        '302':
+          description: Redirects back to `/customers`
+
+    post:
+      tags:
+        - Zoho CRM Integration
+      summary: Sync Contacts & Leads from Zoho CRM (POST)
+      description: |
+        Fetches all Contact and Lead records from Zoho CRM and updates the PostgreSQL customer database.
+        
+        - If database records already match CRM records, informs that no re-sync is required.
+        - If Zoho API rate limit (429) is encountered, automatically falls back to serving PostgreSQL data without interrupting user operations.
+      operationId: syncZohoContactsPost
+      responses:
+        '200':
+          description: Sync results summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZohoSyncResponse'
+              example:
+                success: true
+                message: 'Sync complete: 4 new added, 2 modified updated, 9 matched DB. Total: 15'
+                data:
+                  syncedCount: 4
+                  updatedCount: 2
+                  unchangedCount: 9
+                  totalCustomers: 15
+                  matchesDb: false
+                  rateLimited: false
+        '400':
+          description: Zoho CRM not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Synchronization error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/zoho/status:
+    get:
+      tags:
+        - Zoho CRM Integration
+      summary: Get Zoho CRM Connection Status
+      description: Returns token validity, active Data Center, organization information, and credential status.
+      operationId: getZohoStatus
+      responses:
+        '200':
+          description: Zoho connection status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ZohoConnectionStatus'
+
+  /api/zoho/disconnect:
+    get:
+      tags:
+        - Zoho CRM Integration
+      summary: Disconnect Zoho CRM (GET Alias)
+      description: Clears stored Zoho tokens and disconnects integration.
+      operationId: disconnectZohoGet
+      responses:
+        '200':
+          description: Disconnected successfully
+        '302':
+          description: Redirects to `/customers`
+
+    post:
+      tags:
+        - Zoho CRM Integration
+      summary: Disconnect Zoho CRM (POST)
+      description: Clears stored Zoho CRM OAuth session tokens from storage.
+      operationId: disconnectZohoPost
+      responses:
+        '200':
+          description: Disconnected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Zoho CRM has been disconnected.
+
+  /api/zoho/contacts:
+    get:
+      tags:
+        - Zoho CRM Integration
+      summary: Fetch Zoho Contacts
+      description: Returns contacts from PostgreSQL database or live Zoho CRM API (with fallback handling if rate limited).
+      operationId: getZohoContacts
+      parameters:
+        - name: force
+          in: query
+          required: false
+          description: Set to `true` to force a live API call to Zoho CRM instead of reading PostgreSQL cache
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Contacts retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  source:
+                    type: string
+                    example: PostgreSQL (Database)
+                  count:
+                    type: integer
+                    example: 10
+                  data:
+                    type: array
+                    items:
+                      type: object
+
+  # ---------------------------------------------------------------------------
+  # 7. Google Calendar Integration API
+  # ---------------------------------------------------------------------------
+  /api/calendar/connect:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: Initiate Google Calendar OAuth Flow
+      description: Returns Google OAuth consent URL or redirects browser to Google sign-in.
+      operationId: connectGoogleCalendar
+      responses:
+        '200':
+          description: Auth URL returned for JSON client
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  authUrl:
+                    type: string
+                    example: https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar...
+                  redirectUri:
+                    type: string
+                    example: http://localhost:5000/api/calendar/callback
+        '302':
+          description: Redirects browser to Google Accounts OAuth
+
+  /api/calendar/callback:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: Google Calendar OAuth Callback
+      description: Exchanges authorization code for Google access & refresh tokens, stores them in persistence, and triggers automatic background processing of pending queue jobs.
+      operationId: handleCalendarCallback
+      parameters:
+        - name: code
+          in: query
+          required: false
+          description: Authorization code returned by Google
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: Error code if access denied
+          schema:
+            type: string
+        - name: error_description
+          in: query
+          required: false
+          description: Error description
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: false
+          description: Specific redirect URI used during initial authorization
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully connected Google Calendar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Successfully connected Google Calendar (admin@turbospace.com)!
+                  data:
+                    $ref: '#/components/schemas/CalendarConnectionStatus'
+        '302':
+          description: Redirects browser to `/customers` view with flash message
+        '400':
+          description: Missing code or access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/status:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: Get Google Calendar Status
+      description: Returns connection state, authorized account email, target calendar ID, and token validity.
+      operationId: getCalendarStatus
+      responses:
+        '200':
+          description: Google Calendar status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CalendarConnectionStatus'
+
+  /api/calendar/disconnect:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: Disconnect Google Calendar (GET Alias)
+      description: Disconnects Google Calendar integration.
+      operationId: disconnectCalendarGet
+      responses:
+        '200':
+          description: Disconnected successfully
+        '302':
+          description: Redirects to `/customers`
+
+    post:
+      tags:
+        - Google Calendar Integration
+      summary: Disconnect Google Calendar (POST)
+      description: Clears stored Google OAuth credentials.
+      operationId: disconnectCalendarPost
+      responses:
+        '200':
+          description: Disconnected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Google Calendar has been disconnected.
+
+  /api/calendar/events:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: List Upcoming Calendar Events
+      description: Fetches upcoming events from the active Google Calendar.
+      operationId: listCalendarEvents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of events to fetch
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Events retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                    example: 3
+                  data:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Google Calendar not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Google Calendar Integration
+      summary: Create Event Directly in Google Calendar
+      description: Creates a standalone calendar event in the active Google Calendar.
+      operationId: createCalendarEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - date
+                - roomName
+              properties:
+                title:
+                  type: string
+                  example: Product Sprint Review
+                roomName:
+                  type: string
+                  example: Apollo Executive Boardroom
+                customerName:
+                  type: string
+                  example: Alice Johnson
+                customerCompany:
+                  type: string
+                  example: Apex Innovations
+                date:
+                  type: string
+                  format: date
+                  example: '2026-09-11'
+                startTime:
+                  type: string
+                  example: '15:00'
+                endTime:
+                  type: string
+                  example: '16:00'
+                notes:
+                  type: string
+                  example: Virtual video link needed
+                attendees:
+                  type: integer
+                  example: 5
+      responses:
+        '201':
+          description: Calendar event created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Event created in Google Calendar!
+                  data:
+                    type: object
+        '400':
+          description: Validation error or calendar disconnected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/events/{eventId}:
+    delete:
+      tags:
+        - Google Calendar Integration
+      summary: Delete Google Calendar Event
+      description: Removes an event by its Google Calendar Event ID.
+      operationId: deleteCalendarEvent
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          description: Google Calendar Event ID string
+          schema:
+            type: string
+            example: gcal_event_abc123xyz
+      responses:
+        '200':
+          description: Event deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Event gcal_event_abc123xyz deleted from Google Calendar.
+        '400':
+          description: Calendar disconnected or event not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/calendars:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: List Accessible Google Calendars
+      description: Returns all user primary and secondary/shared calendars available in the authenticated Google Account.
+      operationId: listGoogleCalendars
+      responses:
+        '200':
+          description: List of calendars
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  activeCalendarId:
+                    type: string
+                    example: primary
+                  count:
+                    type: integer
+                    example: 2
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: primary
+                        summary:
+                          type: string
+                          example: admin@turbospace.com
+                        primary:
+                          type: boolean
+                          example: true
+        '400':
+          description: Calendar not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/select-calendar:
+    post:
+      tags:
+        - Google Calendar Integration
+      summary: Select Target Google Calendar
+      description: Set which Google Calendar (primary or dedicated shared secondary calendar) will receive synced booking reservations.
+      operationId: selectGoogleCalendar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - calendarId
+              properties:
+                calendarId:
+                  type: string
+                  description: Google Calendar ID or `primary`
+                  example: c_1880a1b2c3d4e5@group.calendar.google.com
+                calendarName:
+                  type: string
+                  description: Human-readable calendar display name
+                  example: TurboSpace Shared Meeting Rooms
+      responses:
+        '200':
+          description: Target calendar set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Target calendar set to "TurboSpace Shared Meeting Rooms".
+                  data:
+                    $ref: '#/components/schemas/CalendarConnectionStatus'
+        '400':
+          description: Missing calendarId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/create-shared-calendar:
+    post:
+      tags:
+        - Google Calendar Integration
+      summary: Create Dedicated Shared Meeting Calendar
+      description: Creates a new secondary Google Calendar (e.g., 'TurboSpace Shared Meeting Rooms') and sets it as active target calendar.
+      operationId: createSharedCalendar
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                summary:
+                  type: string
+                  example: TurboSpace Shared Meeting Rooms
+                description:
+                  type: string
+                  example: Dedicated shared company calendar for meeting room bookings
+      responses:
+        '201':
+          description: Shared calendar created and activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Created and selected shared calendar "TurboSpace Shared Meeting Rooms"!
+                  data:
+                    type: object
+        '400':
+          description: Google Calendar not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/calendar/sync:
+    get:
+      tags:
+        - Google Calendar Integration
+      summary: Bulk Sync Bookings to Google Calendar (GET Alias)
+      description: Iterates through all confirmed local bookings and creates corresponding events in Google Calendar.
+      operationId: syncCalendarBookingsGet
+      responses:
+        '200':
+          description: Bulk sync completed
+        '302':
+          description: Redirects to `/customers`
+
+    post:
+      tags:
+        - Google Calendar Integration
+      summary: Bulk Sync Bookings to Google Calendar (POST)
+      description: Iterates through all confirmed local bookings without a `googleEventId` and syncs them to Google Calendar.
+      operationId: syncCalendarBookingsPost
+      responses:
+        '200':
+          description: Bulk sync completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Synced 5 bookings to Google Calendar!
+                  syncedCount:
+                    type: integer
+                    example: 5
+                  errors:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Calendar not connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    # --- System Schemas ---
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: UP
+        service:
+          type: string
+          example: TurboSpace Meeting Room Booking API
+        database:
+          type: string
+          example: PostgreSQL Connected
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+          example: 3600.42
+        stats:
+          $ref: '#/components/schemas/SystemStats'
+        integrations:
+          type: object
+          properties:
+            zoho:
+              $ref: '#/components/schemas/ZohoConnectionStatus'
+            googleCalendar:
+              $ref: '#/components/schemas/CalendarConnectionStatus'
+
+    SystemStats:
+      type: object
+      properties:
+        totalCustomers:
+          type: integer
+          example: 15
+        totalRooms:
+          type: integer
+          example: 5
+        activeBookings:
+          type: integer
+          example: 8
+        todayBookingsCount:
+          type: integer
+          example: 3
+        totalRevenue:
+          type: number
+          example: 520.00
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: An error occurred while processing the request.
+
+    # --- Customer Schemas ---
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: cust-1
+        zohoId:
+          type: string
+          nullable: true
+          example: '542000000123456'
+        name:
+          type: string
+          example: Alice Johnson
+        email:
+          type: string
+          format: email
+          example: alice.johnson@apexcorp.com
+        company:
+          type: string
+          example: Apex Innovations
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        bookingCount:
+          type: integer
+          example: 3
+
+    CustomerListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+          example: 15
+        total:
+          type: integer
+          example: 15
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+
+    CustomerCreateInput:
+      type: object
+      required:
+        - name
+        - email
+        - company
+      properties:
+        name:
+          type: string
+          example: Sarah Connor
+        email:
+          type: string
+          format: email
+          example: sarah.connor@cyberdyne.io
+        company:
+          type: string
+          example: Cyberdyne Systems
+
+    CustomerSingleResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Customer added successfully to PostgreSQL
+        data:
+          $ref: '#/components/schemas/Customer'
+
+    # --- Room Schemas ---
+    Room:
+      type: object
+      properties:
+        id:
+          type: string
+          example: room-1
+        name:
+          type: string
+          example: Apollo Executive Boardroom
+        floor:
+          type: string
+          example: Floor 4 (North Wing)
+        capacity:
+          type: integer
+          example: 16
+        hourlyRate:
+          type: number
+          example: 75.00
+        type:
+          type: string
+          example: Boardroom
+        description:
+          type: string
+          example: Executive conference room with 4K video conferencing.
+        image:
+          type: string
+          example: https://images.unsplash.com/photo-1517502884422-41eaead166d4?w=600&auto=format&fit=crop&q=80
+        amenities:
+          type: array
+          items:
+            type: string
+          example: ['4K Video Conferencing', 'Dual 75" Displays', 'High-Speed Wi-Fi']
+
+    RoomListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+          example: 5
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Room'
+
+    TimeSlot:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '09:00-10:00'
+        label:
+          type: string
+          example: 09:00 AM - 10:00 AM
+        startTime:
+          type: string
+          example: '09:00'
+        endTime:
+          type: string
+          example: '10:00'
+        time:
+          type: string
+          example: 09:00 AM
+        period:
+          type: string
+          enum: [Morning, Afternoon, Evening]
+          example: Morning
+        sortOrder:
+          type: integer
+          example: 1
+        isAvailable:
+          type: boolean
+          example: true
+        booking:
+          type: object
+          nullable: true
+
+    RoomAvailabilityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        room:
+          $ref: '#/components/schemas/Room'
+        date:
+          type: string
+          format: date
+          example: '2026-09-11'
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSlot'
+        freeSlots:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSlot'
+        busySlots:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSlot'
+
+    # --- Booking Schemas ---
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          example: BKG-1726050000-1234
+        customerId:
+          type: string
+          example: cust-1
+        customerName:
+          type: string
+          example: Alice Johnson
+        customerEmail:
+          type: string
+          example: alice.johnson@apexcorp.com
+        customerCompany:
+          type: string
+          example: Apex Innovations
+        roomId:
+          type: string
+          example: room-1
+        roomName:
+          type: string
+          example: Apollo Executive Boardroom
+        roomFloor:
+          type: string
+          example: Floor 4 (North Wing)
+        roomType:
+          type: string
+          example: Boardroom
+        roomCapacity:
+          type: integer
+          example: 16
+        roomHourlyRate:
+          type: number
+          example: 75.00
+        date:
+          type: string
+          format: date
+          example: '2026-09-11'
+        startTime:
+          type: string
+          example: '10:00'
+        endTime:
+          type: string
+          example: '11:00'
+        slotLabel:
+          type: string
+          example: 10:00 AM - 11:00 AM
+        title:
+          type: string
+          example: Executive Strategy Meeting
+        attendees:
+          type: integer
+          example: 8
+        notes:
+          type: string
+          example: Bring product roadmap slides
+        totalCost:
+          type: number
+          example: 75.00
+        status:
+          type: string
+          enum: [Confirmed, Cancelled]
+          example: Confirmed
+        googleEventId:
+          type: string
+          nullable: true
+          example: gcal_event_abc123xyz
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BookingListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+          example: 1
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+
+    BookingCreateInput:
+      type: object
+      required:
+        - roomId
+      properties:
+        customerId:
+          type: string
+          description: Existing Customer ID (or customerEmail / zohoId)
+          example: cust-1
+        customerEmail:
+          type: string
+          format: email
+          example: alice.johnson@apexcorp.com
+        zohoId:
+          type: string
+          example: '542000000123456'
+        roomId:
+          type: string
+          description: Room ID to book
+          example: room-1
+        date:
+          type: string
+          format: date
+          description: Date in `YYYY-MM-DD` (defaults to today)
+          example: '2026-09-11'
+        start:
+          type: string
+          description: Start time `HH:mm` (e.g., `14:00` or `14:00-15:00`)
+          example: '14:00'
+        end:
+          type: string
+          description: End time `HH:mm` (e.g., `15:00`)
+          example: '15:00'
+        purpose:
+          type: string
+          description: Meeting title / agenda
+          example: Q3 Financial Review
+        attendees:
+          type: integer
+          default: 2
+          example: 6
+        notes:
+          type: string
+          example: Projector and conference audio required
+
+    BookingCreateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Meeting room booked successfully!
+        data:
+          $ref: '#/components/schemas/Booking'
+        calendarSynced:
+          type: boolean
+          example: true
+        calendarQueued:
+          type: boolean
+          example: false
+
+    BookingCancelResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Booking cancelled successfully.
+        data:
+          type: object
+        calendarDeleted:
+          type: boolean
+          example: true
+
+    # --- Queue Schemas ---
+    QueueJob:
+      type: object
+      properties:
+        id:
+          type: string
+          example: Q-CAL-1726051234-5678
+        type:
+          type: string
+          enum: [GOOGLE_CALENDAR_EVENT, GOOGLE_CALENDAR_DELETE_EVENT, ZOHO_CRM_SYNC]
+          example: GOOGLE_CALENDAR_EVENT
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+          example: PENDING
+        attempts:
+          type: integer
+          example: 1
+        maxAttempts:
+          type: integer
+          example: 5
+        errorMessage:
+          type: string
+          nullable: true
+          example: Google Calendar not connected
+        payload:
+          type: object
+        processedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    QueueListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+          example: 1
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueJob'
+
+    # --- Integration Status Schemas ---
+    ZohoConnectionStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          example: true
+        hasClientId:
+          type: boolean
+          example: true
+        hasClientSecret:
+          type: boolean
+          example: true
+        authType:
+          type: string
+          enum: [oauth, developer_token, refresh_token, env_refresh_token]
+          example: oauth
+        dataCenter:
+          type: string
+          example: INDataCenter
+        organization:
+          type: object
+          properties:
+            companyName:
+              type: string
+              example: Apex Global Corp
+            orgId:
+              type: string
+              example: '60001234567'
+        expiresAt:
+          type: string
+          format: date-time
+          example: '2026-09-11T12:00:00.000Z'
+
+    ZohoSyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: 'Sync complete: 4 new added, 2 modified updated. Total: 15'
+        data:
+          type: object
+          properties:
+            syncedCount:
+              type: integer
+              example: 4
+            updatedCount:
+              type: integer
+              example: 2
+            unchangedCount:
+              type: integer
+              example: 9
+            totalCustomers:
+              type: integer
+              example: 15
+            matchesDb:
+              type: boolean
+              example: false
+            rateLimited:
+              type: boolean
+              example: false
+
+    CalendarConnectionStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          example: true
+        userEmail:
+          type: string
+          example: admin@turbospace.com
+        calendarId:
+          type: string
+          example: primary
+        calendarName:
+          type: string
+          example: Primary Calendar
+        authType:
+          type: string
+          example: oauth2
+        expiresAt:
+          type: string
+          format: date-time
+          example: '2026-09-11T12:00:00.000Z'
