@@ -1,0 +1,9 @@
+node_modules/
+.env
+.DS_Store
+dist/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+client_secret_46543449882-m5c61tl6t3tis0ao9hpnittcvsjb9eak.apps.googleusercontent.com.json
