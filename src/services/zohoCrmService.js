@@ -336,6 +336,22 @@ class ZohoCrmService {
     return data.access_token;
   }
 
+  isRateLimitError(err) {
+    if (!err) return false;
+    if (err.isRateLimited || err.status === 429 || err.statusCode === 429) return true;
+    const msg = String(err.message || err.code || err || '').toLowerCase();
+    return (
+      msg.includes('429') ||
+      msg.includes('rate limit') ||
+      msg.includes('too_many_requests') ||
+      msg.includes('too many requests') ||
+      msg.includes('limit_exceeded') ||
+      msg.includes('oauth_rate_limit') ||
+      msg.includes('max_calls_exceeded') ||
+      msg.includes('throttled')
+    );
+  }
+
   async getOrganizationDetails() {
     try {
       const accessToken = await this.getValidAccessToken();
@@ -379,19 +395,35 @@ class ZohoCrmService {
         const headerInstance = new HeaderMap();
 
         const response = await recordOperations.getRecords(moduleAPIName, paramInstance, headerInstance);
-        if (response != null && response.statusCode === 200 && response.object instanceof ResponseWrapper) {
-          const records = response.object.getData() || [];
-          return records.map(r => {
-            const map = r.getKeyValues() || new Map();
-            const recordObj = { id: r.getId() };
-            for (const [k, v] of map.entries()) {
-              recordObj[k] = v;
-            }
-            return recordObj;
-          });
+        if (response != null) {
+          if (response.statusCode === 429) {
+            const err = new Error('Zoho CRM API Rate Limit Exceeded (HTTP 429: Too Many Requests)');
+            err.status = 429;
+            err.statusCode = 429;
+            err.isRateLimited = true;
+            throw err;
+          }
+          if (response.statusCode === 200 && response.object instanceof ResponseWrapper) {
+            const records = response.object.getData() || [];
+            return records.map(r => {
+              const map = r.getKeyValues() || new Map();
+              const recordObj = { id: r.getId() };
+              for (const [k, v] of map.entries()) {
+                recordObj[k] = v;
+              }
+              return recordObj;
+            });
+          }
         }
       }
     } catch (sdkErr) {
+      if (this.isRateLimitError(sdkErr)) {
+        const err = new Error('Zoho CRM API Rate Limit Exceeded (HTTP 429)');
+        err.status = 429;
+        err.statusCode = 429;
+        err.isRateLimited = true;
+        throw err;
+      }
       console.warn(`[Zoho CRM SDK] Fallback to REST API for ${moduleAPIName}:`, sdkErr.message);
     }
 
@@ -404,8 +436,23 @@ class ZohoCrmService {
       }
     });
 
+    if (res.status === 429) {
+      const err = new Error('Zoho CRM API Rate Limit Exceeded (HTTP 429: Too Many Requests)');
+      err.status = 429;
+      err.statusCode = 429;
+      err.isRateLimited = true;
+      throw err;
+    }
+
     const data = await res.json();
     if (!res.ok) {
+      if (res.status === 429 || this.isRateLimitError(data) || this.isRateLimitError(data.message)) {
+        const err = new Error(data.message || 'Zoho CRM API Rate Limit Exceeded (HTTP 429: Too Many Requests)');
+        err.status = 429;
+        err.statusCode = 429;
+        err.isRateLimited = true;
+        throw err;
+      }
       throw new Error(data.message || `Failed to fetch ${moduleAPIName} from Zoho CRM`);
     }
 
@@ -424,56 +471,165 @@ class ZohoCrmService {
       console.warn('[Zoho CRM] Note: Could not create queue entry:', e.message);
     }
 
-    // Retrieve all existing customers in PostgreSQL to check existence
-    const existingCustomers = await bookingService.getCustomers();
-    const existingZohoIds = new Set(existingCustomers.map(c => String(c.zohoId || '').trim()).filter(Boolean));
-    const existingEmails = new Set(existingCustomers.map(c => String(c.email || '').trim().toLowerCase()).filter(Boolean));
+    // 1. Fetch CRM contacts with 429 rate limit detection
+    let contacts = [];
+    let isRateLimited = false;
 
-    console.log(`[Zoho CRM Sync] Found ${existingCustomers.length} existing customer profiles in PostgreSQL.`);
-
-    let syncedCount = 0;
-    let alreadyExistingCount = 0;
-    const importedCustomers = [];
-
-    // 1. Fetch Contacts from Zoho CRM (Only Contact customers)
     try {
-      const contacts = await this.fetchRecords('Contacts');
-      for (const contact of contacts) {
-        const rawName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || 'Zoho Contact';
-        const fullName = typeof rawName === 'object' ? (rawName.name || 'Zoho Contact') : String(rawName);
-        const email = (typeof contact.Email === 'string' && contact.Email) ? contact.Email.toLowerCase() : `${contact.id || Date.now()}@zoho-contact.com`;
-        const company = (contact.Account_Name && contact.Account_Name.name) || (typeof contact.Department === 'string' ? contact.Department : 'Zoho CRM Client');
-        const zohoId = String(contact.id || '');
-
-        // If contact already exists in PostgreSQL by Zoho ID or Email, DO NOT re-fetch / re-import
-        if ((zohoId && existingZohoIds.has(zohoId)) || (email && existingEmails.has(email.toLowerCase()))) {
-          console.log(`[Zoho Sync] Contact "${fullName}" (${zohoId || email}) already exists in PostgreSQL. Skipping.`);
-          alreadyExistingCount++;
-          continue;
-        }
-
-        const cust = await bookingService.addCustomer({
-          id: zohoId ? `zoho-${zohoId}` : undefined,
-          zohoId: zohoId || null,
-          name: fullName,
-          email,
-          company
-        });
-
-        if (zohoId) existingZohoIds.add(zohoId);
-        if (email) existingEmails.add(email.toLowerCase());
-
-        syncedCount++;
-        importedCustomers.push(cust);
-      }
+      contacts = await this.fetchRecords('Contacts');
     } catch (err) {
-      console.warn('[Zoho Sync] Contacts fetch note:', err.message);
+      if (this.isRateLimitError(err)) {
+        isRateLimited = true;
+        console.warn('[Zoho CRM Sync] Rate limit (429) received from Zoho API. Falling back to displaying customers from DB only.');
+      } else {
+        throw err;
+      }
     }
 
+    // Retrieve all existing customers in PostgreSQL DB
+    const existingCustomers = await bookingService.getCustomers();
+
+    // If Rate Limited (429), immediately return database records only
+    if (isRateLimited) {
+      if (queueEntry && queueEntry.id) {
+        try {
+          await bookingService.updateQueueStatus(queueEntry.id, 'RATE_LIMITED');
+        } catch (e) {
+          console.warn('[Zoho CRM] Queue status update note:', e.message);
+        }
+      }
+
+      if (this.currentConnection) {
+        this.currentConnection.lastRateLimitedAt = new Date().toISOString();
+        this.currentConnection.lastSyncStatus = 'RATE_LIMITED_429';
+        this.savePersistedState(this.currentConnection);
+      }
+
+      return {
+        success: true,
+        rateLimited: true,
+        source: 'PostgreSQL (Database)',
+        message: 'Zoho CRM API rate limit (429) reached. Showing customer records from PostgreSQL database only.',
+        totalCustomers: existingCustomers.length,
+        customers: existingCustomers,
+        syncedCount: 0,
+        updatedCount: 0,
+        unchangedCount: existingCustomers.length,
+        alreadyExistingCount: existingCustomers.length,
+        importedCustomers: []
+      };
+    }
+
+    // 2. Compare fetched CRM records with current database records
+    const dbByZohoId = new Map();
+    const dbByEmail = new Map();
+    for (const cust of existingCustomers) {
+      if (cust.zohoId) {
+        dbByZohoId.set(String(cust.zohoId).trim(), cust);
+      }
+      if (cust.email) {
+        dbByEmail.set(String(cust.email).trim().toLowerCase(), cust);
+      }
+    }
+
+    console.log(`[Zoho CRM Sync] Comparing ${contacts.length} CRM records with ${existingCustomers.length} PostgreSQL database records...`);
+
+    const toInsert = [];
+    const toUpdate = [];
+    const unchanged = [];
+
+    for (const contact of contacts) {
+      const rawName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || 'Zoho Contact';
+      const fullName = (typeof rawName === 'object' ? (rawName.name || 'Zoho Contact') : String(rawName)).trim();
+      const email = ((typeof contact.Email === 'string' && contact.Email) ? contact.Email.toLowerCase() : `${contact.id || Date.now()}@zoho-contact.com`).trim();
+      const company = ((contact.Account_Name && contact.Account_Name.name) || (typeof contact.Department === 'string' ? contact.Department : 'Zoho CRM Client')).trim();
+      const zohoId = String(contact.id || '').trim();
+
+      const existingCust = (zohoId && dbByZohoId.get(zohoId)) || (email && dbByEmail.get(email));
+
+      if (!existingCust) {
+        // Not in DB -> Needs to be inserted
+        toInsert.push({ zohoId, name: fullName, email, company });
+      } else {
+        // Compare existing DB record fields with CRM record fields
+        const nameMatches = (existingCust.name || '').trim() === fullName;
+        const emailMatches = (existingCust.email || '').trim().toLowerCase() === email;
+        const companyMatches = (existingCust.company || '').trim() === company;
+        const zohoIdMatches = !zohoId || String(existingCust.zohoId || '').trim() === zohoId;
+
+        if (nameMatches && emailMatches && companyMatches && zohoIdMatches) {
+          // Exactly matching with DB
+          unchanged.push(existingCust);
+        } else {
+          // Changed in CRM -> Needs to be updated in DB
+          toUpdate.push({
+            id: existingCust.id,
+            zohoId: zohoId || existingCust.zohoId,
+            name: fullName,
+            email,
+            company,
+            existingCust
+          });
+        }
+      }
+    }
+
+    const matchesDb = (toInsert.length === 0 && toUpdate.length === 0);
+
+    let syncedCount = 0;
+    let updatedCount = 0;
+    const importedCustomers = [];
+
+    if (matchesDb) {
+      console.log(`[Zoho CRM Sync] All ${contacts.length} CRM records already match the PostgreSQL database perfectly. Skipping sync.`);
+    } else {
+      console.log(`[Zoho CRM Sync] Records do not match DB! Syncing: ${toInsert.length} new records to insert, ${toUpdate.length} modified records to update.`);
+
+      // Sync non-matching new records
+      for (const item of toInsert) {
+        const cust = await bookingService.addCustomer({
+          id: item.zohoId ? `zoho-${item.zohoId}` : undefined,
+          zohoId: item.zohoId || null,
+          name: item.name,
+          email: item.email,
+          company: item.company
+        });
+        if (cust) {
+          syncedCount++;
+          importedCustomers.push(cust);
+        }
+      }
+
+      // Sync non-matching modified records
+      for (const item of toUpdate) {
+        const cust = await bookingService.updateCustomer(item.id, {
+          name: item.name,
+          email: item.email,
+          company: item.company,
+          zohoId: item.zohoId
+        });
+        if (cust) {
+          updatedCount++;
+          importedCustomers.push(cust);
+        }
+      }
+    }
+
+    // Update connection state and metadata
     if (this.currentConnection) {
       this.currentConnection.lastSyncedAt = new Date().toISOString();
       this.currentConnection.lastSyncCount = syncedCount;
-      this.currentConnection.alreadyExistingCount = alreadyExistingCount;
+      this.currentConnection.lastUpdateCount = updatedCount;
+      this.currentConnection.alreadyExistingCount = unchanged.length;
+      this.currentConnection.lastComparison = {
+        comparedAt: new Date().toISOString(),
+        crmRecordsCount: contacts.length,
+        dbRecordsCount: existingCustomers.length,
+        matchesDb,
+        toInsertCount: toInsert.length,
+        toUpdateCount: toUpdate.length,
+        unchangedCount: unchanged.length
+      };
       this.savePersistedState(this.currentConnection);
     }
 
@@ -489,8 +645,14 @@ class ZohoCrmService {
     const currentCustomers = await bookingService.getCustomers();
 
     return {
+      success: true,
+      synced: !matchesDb,
+      matchesDb,
+      rateLimited: false,
       syncedCount,
-      alreadyExistingCount,
+      updatedCount,
+      unchangedCount: unchanged.length,
+      alreadyExistingCount: unchanged.length,
       totalCustomers: currentCustomers.length,
       importedCustomers
     };
@@ -513,7 +675,10 @@ class ZohoCrmService {
       connectedAt: this.currentConnection?.connectedAt || null,
       lastSyncedAt: this.currentConnection?.lastSyncedAt || null,
       lastSyncCount: this.currentConnection?.lastSyncCount || 0,
-      alreadyExistingCount: this.currentConnection?.alreadyExistingCount || 0
+      lastUpdateCount: this.currentConnection?.lastUpdateCount || 0,
+      alreadyExistingCount: this.currentConnection?.alreadyExistingCount || 0,
+      lastRateLimitedAt: this.currentConnection?.lastRateLimitedAt || null,
+      lastComparison: this.currentConnection?.lastComparison || null
     };
   }
 

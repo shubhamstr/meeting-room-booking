@@ -135,6 +135,35 @@ class BookingService {
     return (await this.getCustomerByEmail(safeEmail)) || (zohoId ? await this.getCustomerByZohoId(zohoId) : null);
   }
 
+  async updateCustomer(id, { name, email, company, zohoId }) {
+    if (!id) return null;
+    const res = await query(
+      `UPDATE customers
+       SET name = COALESCE($2, name),
+           email = COALESCE($3, email),
+           company = COALESCE($4, company),
+           zoho_id = COALESCE($5, zoho_id),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING 
+         id,
+         zoho_id AS "zohoId",
+         name,
+         email,
+         company,
+         created_at AS "createdAt",
+         updated_at AS "updatedAt";`,
+      [
+        id,
+        name ? String(name).trim() : null,
+        email ? String(email).trim().toLowerCase() : null,
+        company ? String(company).trim() : null,
+        zohoId ? String(zohoId).trim() : null
+      ]
+    );
+    return res.rows[0] || null;
+  }
+
   // --- Room Operations (PostgreSQL) ---
 
   async getRooms(minCapacity = 0) {

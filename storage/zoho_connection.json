@@ -9,7 +9,19 @@
   "expiresAt": 1789117393191,
   "connectedAt": "2026-09-11T08:03:13.191Z",
   "userEmail": "admin@turbospace.internal",
-  "lastSyncedAt": "2026-09-11T08:35:02.799Z",
-  "lastSyncCount": 0,
-  "alreadyExistingCount": 10
+  "lastSyncedAt": "2026-09-11T08:40:05.680Z",
+  "lastSyncCount": 1,
+  "alreadyExistingCount": 10,
+  "lastRateLimitedAt": "2026-09-11T08:40:05.651Z",
+  "lastSyncStatus": "RATE_LIMITED_429",
+  "lastUpdateCount": 0,
+  "lastComparison": {
+    "comparedAt": "2026-09-11T08:40:05.680Z",
+    "crmRecordsCount": 11,
+    "dbRecordsCount": 10,
+    "matchesDb": false,
+    "toInsertCount": 1,
+    "toUpdateCount": 0,
+    "unchangedCount": 10
+  }
 }
