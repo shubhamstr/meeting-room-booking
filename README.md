@@ -158,11 +158,16 @@ turbosoft/
    ZOHO_REDIRECT_URI=http://localhost:5000/api/zoho/callback
    ```
 
-3. **Start the development server:**
+3. **Run the seed script (generates 5 meeting rooms and 5 contacts in Zoho CRM & DB):**
+   ```bash
+   npm run seed
+   ```
+
+4. **Start the development server:**
    ```bash
    npm run dev
    ```
-   *Note: Upon startup, `initDb()` will automatically create tables (`customers`, `rooms`, `time_slots`, `bookings`, `queues`) and seed rooms/slots if not already existing.*
+   *Note: Upon startup, `initDb()` will automatically create tables (`customers`, `rooms`, `time_slots`, `bookings`, `queues`) and verify schema integrity.*
 
 ---
 

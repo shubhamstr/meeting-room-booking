@@ -459,6 +459,61 @@ class ZohoCrmService {
     return data.data || [];
   }
 
+  async createRecords(moduleAPIName = 'Contacts', records = [], duplicateCheckFields = ['Email']) {
+    if (!this.isConnected()) {
+      throw new Error('Zoho CRM is not connected. Please connect via OAuth or Developer Token.');
+    }
+
+    const accessToken = await this.getValidAccessToken();
+    const apiDomain = (this.currentConnection && this.currentConnection.apiDomain) || this.getDcInstance(this.currentConnection?.dcKey).apiUrl;
+    
+    // Use upsert endpoint to safely create new or update existing records based on unique field
+    const url = `${apiDomain}/crm/v2/${moduleAPIName}/upsert`;
+    const payload = {
+      data: records,
+      duplicate_check_fields: duplicateCheckFields,
+      trigger: ['approval', 'workflow', 'blueprint']
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.status === 429) {
+      const err = new Error('Zoho CRM API Rate Limit Exceeded (HTTP 429: Too Many Requests)');
+      err.status = 429;
+      err.statusCode = 429;
+      err.isRateLimited = true;
+      throw err;
+    }
+
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.message || `Failed to create/upsert records in Zoho CRM ${moduleAPIName}`);
+    }
+
+    return result.data || [];
+  }
+
+  async createContacts(contactsList = []) {
+    const formattedRecords = contactsList.map(c => ({
+      First_Name: c.firstName || (c.name ? c.name.split(' ')[0] : 'Test'),
+      Last_Name: c.lastName || (c.name ? (c.name.split(' ').slice(1).join(' ') || 'Customer') : 'Customer'),
+      Email: c.email,
+      Phone: c.phone || undefined,
+      Department: c.department || c.company || 'Enterprise Services',
+      Account_Name: c.company ? { name: typeof c.company === 'string' ? c.company : c.company.name } : undefined,
+      Description: c.description || 'Generated via automated seed script for Meeting Room Booking Service'
+    }));
+
+    return await this.createRecords('Contacts', formattedRecords, ['Email']);
+  }
+
   async syncCrmContactsToBookingService(bookingService) {
     if (!this.isConnected()) {
       throw new Error('Zoho CRM is not connected.');
