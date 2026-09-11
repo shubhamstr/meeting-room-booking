@@ -222,11 +222,11 @@
         <table class="modern-customers-table">
           <thead>
             <tr>
-              <th style="width: 30%;">Customer</th>
-              <th style="width: 25%;">Email</th>
-              <th style="width: 18%;">Company</th>
-              <th style="width: 12%;">Bookings</th>
-              <th style="width: 15%; text-align: right;">Action</th>
+              <th style="min-width: 180px;">Customer</th>
+              <th style="min-width: 180px;">Email</th>
+              <th style="min-width: 140px;">Company</th>
+              <th style="min-width: 110px;">Bookings</th>
+              <th style="min-width: 130px; text-align: right;">Action</th>
             </tr>
           </thead>
           <tbody id="customers-table-body">
@@ -273,7 +273,8 @@
 
 <style>
   .landing-container {
-    max-width: 1140px;
+    max-width: 1280px;
+    width: 100%;
     margin: 0 auto;
     padding: 2rem 1.5rem;
   }
@@ -735,10 +736,12 @@
   .table-responsive {
     width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .modern-customers-table {
     width: 100%;
+    min-width: 780px;
     border-collapse: collapse;
     text-align: left;
     font-size: 0.88rem;
@@ -894,9 +897,15 @@
   }
 
   .table-book-btn {
-    padding: 0.35rem 0.85rem;
-    font-size: 0.8rem;
+    padding: 0.42rem 0.95rem;
+    font-size: 0.82rem;
     font-weight: 600;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
   }
 
   /* Table Footer Pagination */

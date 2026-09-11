@@ -233,7 +233,7 @@ function initCustomerTableApi() {
           </td>
 
           <!-- Action: Book Room (Calls /rooms and opens full-screen cards) -->
-          <td style="text-align: right;">
+          <td style="text-align: right; white-space: nowrap;">
             <a href="/rooms?customerId=${encodeURIComponent(cust.id)}" class="btn btn-primary btn-sm table-book-btn">
               <i class="fa-solid fa-calendar-plus"></i>
               <span>Book Room</span>
