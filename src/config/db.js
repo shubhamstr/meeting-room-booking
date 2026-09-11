@@ -37,6 +37,27 @@ export async function query(text, params) {
   }
 }
 
+// Get dedicated pool client
+export async function getClient() {
+  return await pool.connect();
+}
+
+// Helper for executing queries within an isolated ACID transaction
+export async function withTransaction(callback) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // Initial Room Configurations for Seeding
 const defaultRooms = [
   {

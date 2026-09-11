@@ -1,6 +1,7 @@
-import { query } from '../config/db.js';
+import { query, withTransaction } from '../config/db.js';
 import { STATIC_TIME_SLOTS, formatTime12h, findSlot } from '../config/timeSlots.js';
 import { googleCalendarService } from './googleCalendarService.js';
+import { zohoCrmService } from './zohoCrmService.js';
 import { queueService } from './queueService.js';
 
 // Helper to get formatted date string YYYY-MM-DD
@@ -413,6 +414,8 @@ class BookingService {
   async createBooking(params = {}) {
     // Support multiple field casing / naming conventions
     const customerId = params.customerId || params.customer_id || params['customer ID'] || params.customer;
+    const customerEmail = params.customerEmail || params.customer_email || params.email || params['customer Email'];
+    const customerZohoId = params.zohoId || params.zoho_id || params['zoho ID'];
     const roomId = params.roomId || params.room_id || params['room ID'] || params.room;
     const start = params.start || params.startTime || params.start_time || params['start time'];
     const end = params.end || params.endTime || params.end_time || params['end time'];
@@ -429,22 +432,6 @@ class BookingService {
     const room = await this.getRoomById(roomId);
     if (!room) {
       throw new Error(`Meeting room "${roomId}" not found.`);
-    }
-
-    // Resolve customer
-    let customer = null;
-    if (customerId) {
-      customer = await this.getCustomerById(customerId);
-    } else {
-      // If no customer ID provided, fallback to first available customer in DB
-      const allCustomers = await this.getCustomers();
-      if (allCustomers.length > 0) {
-        customer = allCustomers[0];
-      }
-    }
-
-    if (!customer) {
-      throw new Error('Customer not found. Please pick or register a valid customer.');
     }
 
     const allSlots = await this.getAllSlots();
@@ -526,66 +513,151 @@ class BookingService {
       }
     }
 
-    // Check collision in PostgreSQL by room_id, date, start_time, end_time
-    const collisionCheck = await query(
-      `SELECT id, start_time, end_time FROM bookings 
-       WHERE room_id = $1 
-         AND date = $2 
-         AND status != 'Cancelled'
-         AND (
-           (start_time = $3 AND end_time = $4)
-           OR (start_time < $4 AND end_time > $3)
-         )
-       LIMIT 1;`,
-      [roomId, date, parsedStartTime, parsedEndTime]
-    );
+    // Wrap concurrent booking logic in an isolated database transaction
+    return await withTransaction(async (client) => {
+      // Transaction Query Logic:
+      // 1. Acquire transactional advisory lock for room and date to serialize concurrent booking attempts at the same time
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1));', [`booking_${room.id}_${date}`]);
 
-    if (collisionCheck.rows.length > 0) {
-      throw new Error(`Room "${room.name}" is already booked on ${date} (${parsedStartTime} - ${parsedEndTime}).`);
-    }
+      // 2. First check if booking already exists for this room, date, and overlapping time range
+      const collisionCheck = await client.query(
+        `SELECT id, title, start_time AS "startTime", end_time AS "endTime" 
+         FROM bookings 
+         WHERE room_id = $1 
+           AND date = $2 
+           AND status != 'Cancelled'
+           AND (
+             (start_time = $3 AND end_time = $4)
+             OR (start_time < $4 AND end_time > $3)
+           )
+         LIMIT 1;`,
+        [room.id, date, parsedStartTime, parsedEndTime]
+      );
 
-    const bookingId = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
-    const bookingTitle = purpose?.trim() || `Meeting - ${customer.company || customer.name}`;
-    const totalCost = room.hourlyRate;
+      if (collisionCheck.rows.length > 0) {
+        throw new Error(`Room "${room.name}" is already booked on ${date} (${parsedStartTime} - ${parsedEndTime}).`);
+      }
 
-    const res = await query(
-      `INSERT INTO bookings (
-        id, customer_id, room_id, date, start_time, end_time, title, attendees, notes, total_cost, status, google_event_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Confirmed', NULL)
-      RETURNING 
-        id,
-        customer_id AS "customerId",
-        room_id AS "roomId",
-        date,
-        start_time AS "startTime",
-        end_time AS "endTime",
-        title,
-        attendees,
-        notes,
-        total_cost::float AS "totalCost",
-        status,
-        google_event_id AS "googleEventId",
-        created_at AS "createdAt";`,
-      [bookingId, customer.id, room.id, date, parsedStartTime, parsedEndTime, bookingTitle, attendees, notes, totalCost]
-    );
+      // 3. If booking does NOT exist, check if customer exists in CRM
+      let customer = null;
 
-    const newBooking = res.rows[0];
+      // Check in PostgreSQL database first
+      if (customerId) {
+        const custRes = await client.query(
+          `SELECT id, zoho_id AS "zohoId", name, email, company FROM customers WHERE id = $1 LIMIT 1;`,
+          [customerId]
+        );
+        customer = custRes.rows[0] || null;
+      }
+      if (!customer && customerZohoId) {
+        const custRes = await client.query(
+          `SELECT id, zoho_id AS "zohoId", name, email, company FROM customers WHERE zoho_id = $1 LIMIT 1;`,
+          [String(customerZohoId)]
+        );
+        customer = custRes.rows[0] || null;
+      }
+      if (!customer && customerEmail) {
+        const custRes = await client.query(
+          `SELECT id, zoho_id AS "zohoId", name, email, company FROM customers WHERE LOWER(email) = LOWER($1) LIMIT 1;`,
+          [customerEmail.trim()]
+        );
+        customer = custRes.rows[0] || null;
+      }
 
-    return {
-      ...newBooking,
-      startTime: parsedStartTime,
-      endTime: parsedEndTime,
-      start: `${date}T${parsedStartTime.length === 5 ? parsedStartTime + ':00' : parsedStartTime}`,
-      end: `${date}T${parsedEndTime.length === 5 ? parsedEndTime + ':00' : parsedEndTime}`,
-      purpose: bookingTitle,
-      customerName: customer.name,
-      customerEmail: customer.email,
-      customerCompany: customer.company,
-      roomName: room.name,
-      roomFloor: room.floor,
-      roomType: room.type,
-      roomCapacity: room.capacity
-    };
+      // Check Zoho CRM existence if Zoho CRM integration is connected
+      const isZohoConnected = zohoCrmService.isConnected();
+      if (isZohoConnected) {
+        const crmCheck = await zohoCrmService.checkCustomerExists({
+          id: customer?.id || customerId,
+          zohoId: customer?.zohoId || customerZohoId,
+          email: customer?.email || customerEmail
+        });
+
+        if (crmCheck && crmCheck.exists && crmCheck.contact) {
+          const crmContact = crmCheck.contact;
+          // Ensure customer record is saved/updated in local database within transaction
+          const insertCust = await client.query(
+            `INSERT INTO customers (id, zoho_id, name, email, company, updated_at)
+             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+             ON CONFLICT (email) DO UPDATE SET
+               zoho_id = COALESCE(EXCLUDED.zoho_id, customers.zoho_id),
+               name = COALESCE(EXCLUDED.name, customers.name),
+               company = COALESCE(EXCLUDED.company, customers.company),
+               updated_at = CURRENT_TIMESTAMP
+             RETURNING id, zoho_id AS "zohoId", name, email, company;`,
+            [
+              customer?.id || crmContact.id || `cust-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              crmContact.zohoId || null,
+              crmContact.name,
+              crmContact.email,
+              crmContact.company || 'Independent Corp'
+            ]
+          );
+          customer = insertCust.rows[0] || customer;
+        } else if (!customer || !customer.zohoId) {
+          const customerIdentifier = customer?.name || customerId || customerEmail || 'Specified customer';
+          throw new Error(`Customer "${customerIdentifier}" does not exist in Zoho CRM. Please verify or register the customer in CRM.`);
+        }
+      } else {
+        // Zoho CRM is not connected / offline: verify customer exists in local database
+        if (!customer) {
+          if (!customerId && !customerEmail && !customerZohoId) {
+            const firstCust = await client.query(
+              `SELECT id, zoho_id AS "zohoId", name, email, company FROM customers ORDER BY created_at ASC LIMIT 1;`
+            );
+            customer = firstCust.rows[0] || null;
+          }
+        }
+        if (!customer) {
+          throw new Error('Customer not found in CRM or local records. Please pick or register a valid customer.');
+        }
+      }
+
+      // 4. Insert booking into database within transaction
+      const bookingId = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
+      const bookingTitle = purpose?.trim() || `Meeting - ${customer.company || customer.name}`;
+      const totalCost = room.hourlyRate;
+
+      const res = await client.query(
+        `INSERT INTO bookings (
+          id, customer_id, room_id, date, start_time, end_time, title, attendees, notes, total_cost, status, google_event_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Confirmed', NULL)
+        RETURNING 
+          id,
+          customer_id AS "customerId",
+          room_id AS "roomId",
+          date,
+          start_time AS "startTime",
+          end_time AS "endTime",
+          title,
+          attendees,
+          notes,
+          total_cost::float AS "totalCost",
+          status,
+          google_event_id AS "googleEventId",
+          created_at AS "createdAt";`,
+        [bookingId, customer.id, room.id, date, parsedStartTime, parsedEndTime, bookingTitle, attendees, notes, totalCost]
+      );
+
+      const newBooking = res.rows[0];
+
+      return {
+        ...newBooking,
+        startTime: parsedStartTime,
+        endTime: parsedEndTime,
+        start: `${date}T${parsedStartTime.length === 5 ? parsedStartTime + ':00' : parsedStartTime}`,
+        end: `${date}T${parsedEndTime.length === 5 ? parsedEndTime + ':00' : parsedEndTime}`,
+        purpose: bookingTitle,
+        customerName: customer.name,
+        customerEmail: customer.email,
+        customerCompany: customer.company,
+        customerZohoId: customer.zohoId || null,
+        roomName: room.name,
+        roomFloor: room.floor,
+        roomType: room.type,
+        roomCapacity: room.capacity
+      };
+    });
   }
 
   async updateBooking(bookingId, updates = {}) {

@@ -170,6 +170,8 @@ const handleBookingPost = async (req, res) => {
 
   try {
     const customerId = req.body.customerId || req.body.customer_id || req.body['customer ID'] || req.body.customer;
+    const customerEmail = req.body.customerEmail || req.body.customer_email || req.body.email || req.body['customer Email'];
+    const zohoId = req.body.zohoId || req.body.zoho_id || req.body['zoho ID'];
     const roomId = req.body.roomId || req.body.room_id || req.body['room ID'] || req.body.room;
     const start = req.body.start || req.body.startTime || req.body.start_time;
     const end = req.body.end || req.body.endTime || req.body.end_time;
@@ -187,6 +189,8 @@ const handleBookingPost = async (req, res) => {
 
     const newBooking = await bookingService.createBooking({
       customerId,
+      customerEmail,
+      zohoId,
       roomId,
       start,
       end,

@@ -459,6 +459,127 @@ class ZohoCrmService {
     return data.data || [];
   }
 
+  async getContactById(contactId) {
+    if (!this.isConnected() || !contactId) return null;
+    const cleanId = String(contactId).replace(/^zoho-/, '').trim();
+    if (!cleanId) return null;
+
+    try {
+      const accessToken = await this.getValidAccessToken();
+      const apiDomain = (this.currentConnection && this.currentConnection.apiDomain) || this.getDcInstance(this.currentConnection?.dcKey).apiUrl;
+      const res = await fetch(`${apiDomain}/crm/v2/Contacts/${encodeURIComponent(cleanId)}`, {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`
+        }
+      });
+
+      if (res.status === 404 || res.status === 204) return null;
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      if (data && data.data && data.data.length > 0) {
+        return data.data[0];
+      }
+      return null;
+    } catch (err) {
+      if (this.isRateLimitError(err)) {
+        console.warn('[Zoho CRM] Rate limit encountered while looking up contact by ID:', err.message);
+      } else {
+        console.warn('[Zoho CRM] Error looking up contact by ID:', err.message);
+      }
+      return null;
+    }
+  }
+
+  async searchContactByEmail(email) {
+    if (!this.isConnected() || !email) return null;
+    const safeEmail = String(email).trim().toLowerCase();
+    if (!safeEmail) return null;
+
+    try {
+      const accessToken = await this.getValidAccessToken();
+      const apiDomain = (this.currentConnection && this.currentConnection.apiDomain) || this.getDcInstance(this.currentConnection?.dcKey).apiUrl;
+      const res = await fetch(`${apiDomain}/crm/v2/Contacts/search?email=${encodeURIComponent(safeEmail)}`, {
+        headers: {
+          Authorization: `Zoho-oauthtoken ${accessToken}`
+        }
+      });
+
+      if (res.status === 404 || res.status === 204) return null;
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      if (data && data.data && data.data.length > 0) {
+        return data.data[0];
+      }
+      return null;
+    } catch (err) {
+      if (this.isRateLimitError(err)) {
+        console.warn('[Zoho CRM] Rate limit encountered while searching contact by email:', err.message);
+      } else {
+        console.warn('[Zoho CRM] Error searching contact by email:', err.message);
+      }
+      return null;
+    }
+  }
+
+  async checkCustomerExists({ id, zohoId, email }) {
+    if (!this.isConnected()) {
+      return { exists: false, isOffline: true };
+    }
+
+    // 1. Check by Zoho ID
+    const targetZohoId = zohoId || (id && String(id).startsWith('zoho-') ? String(id).replace(/^zoho-/, '') : null);
+    if (targetZohoId) {
+      const contact = await this.getContactById(targetZohoId);
+      if (contact) {
+        const rawName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || contact.name || 'Zoho Contact';
+        const fullName = (typeof rawName === 'object' ? (rawName.name || 'Zoho Contact') : String(rawName)).trim();
+        const safeEmail = ((typeof contact.Email === 'string' && contact.Email) ? contact.Email.toLowerCase() : '').trim();
+        const company = ((contact.Account_Name && contact.Account_Name.name) || (typeof contact.Department === 'string' ? contact.Department : 'Zoho CRM Client')).trim();
+        const contactZohoId = String(contact.id || targetZohoId).trim();
+
+        return {
+          exists: true,
+          source: 'zoho_crm',
+          contact: {
+            id: `zoho-${contactZohoId}`,
+            zohoId: contactZohoId,
+            name: fullName,
+            email: safeEmail,
+            company
+          }
+        };
+      }
+    }
+
+    // 2. Check by Email
+    if (email) {
+      const contact = await this.searchContactByEmail(email);
+      if (contact) {
+        const rawName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || contact.name || 'Zoho Contact';
+        const fullName = (typeof rawName === 'object' ? (rawName.name || 'Zoho Contact') : String(rawName)).trim();
+        const safeEmail = ((typeof contact.Email === 'string' && contact.Email) ? contact.Email.toLowerCase() : email).trim();
+        const company = ((contact.Account_Name && contact.Account_Name.name) || (typeof contact.Department === 'string' ? contact.Department : 'Zoho CRM Client')).trim();
+        const contactZohoId = String(contact.id || '').trim();
+
+        return {
+          exists: true,
+          source: 'zoho_crm',
+          contact: {
+            id: contactZohoId ? `zoho-${contactZohoId}` : undefined,
+            zohoId: contactZohoId || null,
+            name: fullName,
+            email: safeEmail,
+            company
+          }
+        };
+      }
+    }
+
+    return { exists: false, source: 'zoho_crm' };
+  }
+
   async createRecords(moduleAPIName = 'Contacts', records = [], duplicateCheckFields = ['Email']) {
     if (!this.isConnected()) {
       throw new Error('Zoho CRM is not connected. Please connect via OAuth or Developer Token.');

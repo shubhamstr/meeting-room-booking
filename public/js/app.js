@@ -896,8 +896,16 @@ function initRoomAvailability() {
     if (isBookingInProgress) return;
     isBookingInProgress = true;
 
+    // Immediately lock all free slot cards to prevent duplicate clicks / double submits
+    document.querySelectorAll('.free-slot-card').forEach(c => {
+      c.style.pointerEvents = 'none';
+      c.style.opacity = '0.65';
+      c.setAttribute('aria-disabled', 'true');
+    });
+
     const originalHtml = slotCard.innerHTML;
     slotCard.classList.add('booking-in-progress');
+    slotCard.style.opacity = '1';
     slotCard.innerHTML = `
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem 0; gap: 0.5rem;">
         <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 1.5rem; color: #6ee7b7;"></i>
@@ -943,6 +951,15 @@ function initRoomAvailability() {
       showNotification(`Booking failed: ${err.message}`, 'error');
       slotCard.classList.remove('booking-in-progress');
       slotCard.innerHTML = originalHtml;
+
+      // Re-enable slot cards on failure
+      document.querySelectorAll('.free-slot-card').forEach(c => {
+        c.style.pointerEvents = 'auto';
+        c.style.opacity = '1';
+        c.removeAttribute('aria-disabled');
+      });
+      // Also refresh availability to show live updated status
+      fetchAvailability(currentDate, false);
     } finally {
       isBookingInProgress = false;
     }
