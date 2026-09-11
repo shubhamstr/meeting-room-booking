@@ -144,7 +144,7 @@
 
   </div>
 
-  <!-- Synced Customers Directory (PostgreSQL Database Table UI) -->
+  <!-- Synced Customers Directory (PostgreSQL Database Table UI via /api/customers) -->
   <div class="customers-directory-section">
     <div class="directory-header-row">
       <div>
@@ -153,211 +153,125 @@
             <i class="fa-solid fa-database directory-icon"></i>
             PostgreSQL Customer Directory
           </h2>
-          <span class="total-count-badge">
-            <%= (typeof pagination !== 'undefined' && pagination.total !== undefined) ? pagination.total : ((typeof customers !== 'undefined' && customers) ? customers.length : 0) %> profiles
+          <span class="total-count-badge" id="total-customers-badge">
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Loading profiles...
+          </span>
+          <span class="api-endpoint-pill" title="Live data endpoint">
+            <i class="fa-solid fa-code"></i> GET /api/customers
           </span>
         </div>
         <p class="directory-subtitle">
-          Persisted customers from Zoho CRM sync and database records. Search by customer name and email.
+          Persisted customer records synced from Zoho CRM & database. Real-time querying via <code>/api/customers</code> endpoint.
         </p>
       </div>
 
-      <!-- Search by Name and Email from PostgreSQL DB -->
-      <form action="/customers" method="GET" class="customer-db-search-form">
-        <div class="db-search-input-wrap">
-          <i class="fa-solid fa-magnifying-glass search-icon"></i>
-          <input 
-            type="text" 
-            name="search" 
-            id="customer-search-input" 
-            placeholder="Search by name or email..." 
-            value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>"
-            autocomplete="off"
-          >
-          <% if (typeof searchQuery !== 'undefined' && searchQuery) { %>
-            <a href="/customers" class="search-clear-btn" title="Clear search">
+      <!-- Search & Controls Toolbar -->
+      <div class="customer-toolbar-wrap">
+        <form action="/customers" method="GET" class="customer-db-search-form" id="customer-search-form" onsubmit="return false;">
+          <div class="db-search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input 
+              type="text" 
+              name="search" 
+              id="customer-search-input" 
+              placeholder="Search name or email..." 
+              value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>"
+              autocomplete="off"
+            >
+            <button type="button" class="search-clear-btn" id="customer-search-clear" title="Clear search" style="<%= (typeof searchQuery !== 'undefined' && searchQuery) ? 'display: inline-flex;' : 'display: none;' %>">
               <i class="fa-solid fa-xmark"></i>
-            </a>
-          <% } %>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <span>Search</span>
-        </button>
-      </form>
+            </button>
+          </div>
+          
+          <div class="table-page-size-wrap">
+            <select id="customer-limit-select" class="limit-dropdown" title="Rows per page">
+              <option value="5">5 / page</option>
+              <option value="10" selected>10 / page</option>
+              <option value="20">20 / page</option>
+              <option value="50">50 / page</option>
+            </select>
+          </div>
+
+          <button type="button" id="api-refresh-btn" class="btn btn-secondary btn-sm refresh-api-btn" title="Fetch fresh data from /api/customers">
+            <i class="fa-solid fa-arrows-rotate" id="api-refresh-icon"></i>
+            <span>Refresh</span>
+          </button>
+        </form>
+      </div>
     </div>
 
-    <% if (typeof customers !== 'undefined' && customers && customers.length > 0) { %>
-      <div class="customers-table-card">
-        <div class="table-responsive">
-          <table class="modern-customers-table">
-            <thead>
-              <tr>
-                <th style="width: 30%;">Customer</th>
-                <th style="width: 25%;">Email</th>
-                <th style="width: 18%;">Company</th>
-                <th style="width: 12%;">Bookings</th>
-                <th style="width: 15%; text-align: right;">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <% customers.forEach(cust => { 
-                const initials = (cust.name || 'Customer')
-                  .split(' ')
-                  .filter(Boolean)
-                  .map(n => n[0])
-                  .join('')
-                  .toUpperCase()
-                  .slice(0, 2) || 'CU';
-              %>
-                <tr>
-                  <!-- Customer Avatar & Name -->
-                  <td>
-                    <div class="table-cust-cell">
-                      <div class="table-avatar">
-                        <%= initials %>
-                      </div>
-                      <div class="table-cust-info">
-                        <div class="table-cust-name-row">
-                          <span class="table-cust-name" title="<%= cust.name %>"><%= cust.name %></span>
-                          <% if (cust.zohoId) { %>
-                            <span class="table-zoho-badge" title="Synced from Zoho CRM (ID: <%= cust.zohoId %>)">
-                              <i class="fa-solid fa-cloud-bolt"></i> Zoho
-                            </span>
-                          <% } %>
-                        </div>
-                        <span class="table-cust-id">ID: <%= cust.id %></span>
-                      </div>
-                    </div>
-                  </td>
-
-                  <!-- Email -->
-                  <td>
-                    <div class="table-email-cell">
-                      <i class="fa-regular fa-envelope table-cell-icon"></i>
-                      <a href="mailto:<%= cust.email %>" class="table-email-link" title="<%= cust.email %>">
-                        <%= cust.email %>
-                      </a>
-                    </div>
-                  </td>
-
-                  <!-- Company -->
-                  <td>
-                    <div class="table-company-cell">
-                      <i class="fa-solid fa-building table-cell-icon"></i>
-                      <span class="table-company-text" title="<%= cust.company || 'Independent Corp' %>">
-                        <%= cust.company || 'Independent Corp' %>
-                      </span>
-                    </div>
-                  </td>
-
-                  <!-- Active Bookings Count -->
-                  <td>
-                    <span class="table-bookings-badge <%= (cust.bookingCount > 0) ? 'has-bookings' : 'no-bookings' %>">
-                      <i class="fa-solid fa-calendar-check"></i>
-                      <%= cust.bookingCount || 0 %> <%= cust.bookingCount === 1 ? 'booking' : 'bookings' %>
-                    </span>
-                  </td>
-
-                  <!-- Action: Book Room -->
-                  <td style="text-align: right;">
-                    <a href="/book?customerId=<%= cust.id %>" class="btn btn-primary btn-sm table-book-btn">
-                      <i class="fa-solid fa-calendar-plus"></i>
-                      <span>Book Room</span>
-                    </a>
-                  </td>
-                </tr>
-              <% }) %>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Table Footer Pagination -->
-        <% if (typeof pagination !== 'undefined') { %>
-          <div class="table-pagination-footer">
-            <div class="pagination-info">
-              Showing 
-              <strong><%= Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total) %></strong> - 
-              <strong><%= Math.min(pagination.page * pagination.pageSize, pagination.total) %></strong> of 
-              <strong><%= pagination.total %></strong> customers
-            </div>
-
-            <div class="pagination-controls">
-              <!-- Previous Page -->
-              <% if (pagination.hasPrevPage) { %>
-                <a href="/customers?page=<%= pagination.page - 1 %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>" class="pagination-btn">
-                  <i class="fa-solid fa-chevron-left"></i>
-                  <span>Previous</span>
-                </a>
-              <% } else { %>
-                <span class="pagination-btn disabled">
-                  <i class="fa-solid fa-chevron-left"></i>
-                  <span>Previous</span>
-                </span>
-              <% } %>
-
-              <!-- Page Number Pills -->
-              <div class="pagination-pages">
-                <% for (let p = 1; p <= pagination.totalPages; p++) { %>
-                  <% if (p === 1 || p === pagination.totalPages || (p >= pagination.page - 1 && p <= pagination.page + 1)) { %>
-                    <a 
-                      href="/customers?page=<%= p %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>" 
-                      class="pagination-page-num <%= p === pagination.page ? 'active' : '' %>"
-                    >
-                      <%= p %>
-                    </a>
-                  <% } else if (p === pagination.page - 2 || p === pagination.page + 2) { %>
-                    <span class="pagination-ellipsis">&hellip;</span>
-                  <% } %>
-                <% } %>
-              </div>
-
-              <!-- Next Page -->
-              <% if (pagination.hasNextPage) { %>
-                <a href="/customers?page=<%= pagination.page + 1 %><%= searchQuery ? '&search=' + encodeURIComponent(searchQuery) : '' %>" class="pagination-btn">
-                  <span>Next</span>
-                  <i class="fa-solid fa-chevron-right"></i>
-                </a>
-              <% } else { %>
-                <span class="pagination-btn disabled">
-                  <span>Next</span>
-                  <i class="fa-solid fa-chevron-right"></i>
-                </span>
-              <% } %>
-            </div>
-          </div>
-        <% } %>
+    <!-- Loading State Skeleton / Spinner -->
+    <div id="customers-loading-state" class="table-loading-container">
+      <div class="loading-spinner-wrap">
+        <i class="fa-solid fa-circle-notch fa-spin loading-spinner-icon"></i>
       </div>
-    <% } else { %>
-      <!-- Empty State -->
-      <div class="directory-empty-card">
-        <% if (typeof searchQuery !== 'undefined' && searchQuery) { %>
-          <div class="empty-icon-circle">
-            <i class="fa-solid fa-magnifying-glass"></i>
-          </div>
-          <h3 class="empty-title">No Customers Found</h3>
-          <p class="empty-desc">
-            No PostgreSQL records matched your query <strong>"<%= searchQuery %>"</strong> by name or email.
-          </p>
-          <a href="/customers" class="btn btn-secondary btn-sm">
-            <i class="fa-solid fa-rotate-left"></i>
-            <span>Clear Search</span>
-          </a>
-        <% } else { %>
-          <div class="empty-icon-circle">
-            <i class="fa-solid fa-database"></i>
-          </div>
-          <h3 class="empty-title">No Customers in PostgreSQL Yet</h3>
-          <p class="empty-desc">
-            Connect your <strong>Zoho CRM</strong> account and sync live contacts directly into your database.
-          </p>
-          <a href="/api/zoho/connect" class="btn btn-zoho">
-            <i class="fa-solid fa-cloud-bolt"></i>
-            <span>Connect &amp; Sync Zoho CRM</span>
-          </a>
-        <% } %>
+      <p class="loading-text">Fetching live data from <code>/api/customers</code>...</p>
+    </div>
+
+    <!-- Error State Container -->
+    <div id="customers-error-state" class="directory-empty-card directory-error-card" style="display: none;">
+      <div class="empty-icon-circle error-circle">
+        <i class="fa-solid fa-triangle-exclamation"></i>
       </div>
-    <% } %>
+      <h3 class="empty-title">Error Loading Customers</h3>
+      <p class="empty-desc error-message-text">Failed to fetch customer data from /api/customers endpoint.</p>
+      <button type="button" class="btn btn-primary btn-sm" id="api-retry-btn">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span>Retry API Call</span>
+      </button>
+    </div>
+
+    <!-- Table Card Container -->
+    <div class="customers-table-card" id="customers-table-card" style="display: none;">
+      <div class="table-responsive">
+        <table class="modern-customers-table">
+          <thead>
+            <tr>
+              <th style="width: 30%;">Customer</th>
+              <th style="width: 25%;">Email</th>
+              <th style="width: 18%;">Company</th>
+              <th style="width: 12%;">Bookings</th>
+              <th style="width: 15%; text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="customers-table-body">
+            <!-- Dynamically populated via GET /api/customers endpoint -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer Pagination -->
+      <div class="table-pagination-footer" id="customers-pagination-footer" style="display: none;">
+        <!-- Dynamically populated via GET /api/customers endpoint -->
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div class="directory-empty-card" id="customers-empty-state" style="display: none;">
+      <div class="empty-icon-circle">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </div>
+      <div class="empty-query-wrap" style="display: none;">
+        <h3 class="empty-title">No Customers Found</h3>
+        <p class="empty-desc">
+          No records matched your search query <strong class="empty-query-text"></strong>.
+        </p>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('customer-search-clear').click();">
+          <i class="fa-solid fa-rotate-left"></i>
+          <span>Clear Search</span>
+        </button>
+      </div>
+      <div class="empty-default-wrap" style="display: none;">
+        <h3 class="empty-title">No Customers in PostgreSQL Yet</h3>
+        <p class="empty-desc">
+          Connect your <strong>Zoho CRM</strong> account and sync live contacts directly into your database.
+        </p>
+        <a href="/api/zoho/connect" class="btn btn-zoho">
+          <i class="fa-solid fa-cloud-bolt"></i>
+          <span>Connect &amp; Sync Zoho CRM</span>
+        </a>
+      </div>
+    </div>
   </div>
 
   <!-- Quick Navigation Panel -->
@@ -640,6 +554,24 @@
     font-weight: 700;
     padding: 0.2rem 0.6rem;
     border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .api-endpoint-pill {
+    background: rgba(6, 182, 212, 0.12);
+    color: #67e8f9;
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-family: monospace;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    letter-spacing: 0.02em;
   }
 
   .directory-subtitle {
@@ -648,16 +580,33 @@
     margin: 0;
   }
 
-  /* Search Form */
+  .directory-subtitle code {
+    font-size: 0.82rem;
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--primary-400);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+
+  /* Customer Toolbar */
+  .customer-toolbar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
   .customer-db-search-form {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
+    flex-wrap: wrap;
   }
 
   .db-search-input-wrap {
     position: relative;
-    min-width: 280px;
+    min-width: 250px;
   }
 
   .search-icon {
@@ -667,11 +616,12 @@
     transform: translateY(-50%);
     color: var(--text-dim);
     font-size: 0.85rem;
+    pointer-events: none;
   }
 
   .db-search-input-wrap input {
     width: 100%;
-    padding: 0.55rem 2rem 0.55rem 2.25rem;
+    padding: 0.52rem 2.2rem 0.52rem 2.25rem;
     background: rgba(18, 24, 38, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 10px;
@@ -688,17 +638,116 @@
 
   .search-clear-btn {
     position: absolute;
-    right: 10px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
+    background: none;
+    border: none;
     color: var(--text-dim);
-    text-decoration: none;
+    cursor: pointer;
     font-size: 0.85rem;
-    padding: 2px 5px;
+    padding: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: color 0.15s ease;
   }
 
   .search-clear-btn:hover {
     color: #fff;
+  }
+
+  .limit-dropdown {
+    background: rgba(18, 24, 38, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    color: #cbd5e1;
+    font-size: 0.84rem;
+    padding: 0.52rem 0.75rem;
+    outline: none;
+    cursor: pointer;
+    font-weight: 500;
+    transition: border-color 0.2s ease;
+  }
+
+  .limit-dropdown:focus {
+    border-color: var(--primary-500);
+  }
+
+  .limit-dropdown option {
+    background: #121826;
+    color: #fff;
+  }
+
+  .refresh-api-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  /* Table Loading State */
+  .table-loading-container {
+    background: rgba(22, 30, 48, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .loading-spinner-wrap {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: rgba(99, 102, 241, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .loading-spinner-icon {
+    font-size: 1.5rem;
+    color: var(--primary-400);
+  }
+
+  .loading-text {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .loading-text code {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--primary-400);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+
+  /* Error State Card */
+  .directory-error-card {
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(30, 15, 20, 0.6);
+  }
+
+  .error-circle {
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #f87171 !important;
+  }
+
+  .fade-in-row {
+    animation: fadeInRow 0.25s ease-out;
+  }
+
+  @keyframes fadeInRow {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   /* Modern Customers Table */

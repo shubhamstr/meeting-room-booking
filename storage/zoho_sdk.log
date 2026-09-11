@@ -503,3 +503,63 @@
   level: 'info',
   timestamp: '2026-09-11 14:21:07'
 }
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:21:09'
+}
+{
+  message: `REQUEST-METHOD = GET , URL = https://www.zohoapis.com/crm/v2/Contacts , HEADERS = [["Authorization"," ## can't disclose ## "],["X-ZOHO-SDK","win32/10.0.26200/nodejs-2.0/v22.16.0:6.1.0"]] , PARAMS = [].`,
+  level: 'info',
+  timestamp: '2026-09-11 14:24:18'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:24:21'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:24:34'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:25:59'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:26:06'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:26:12'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:50:25'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:51:00'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:52:49'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:53:04'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:53:17'
+}

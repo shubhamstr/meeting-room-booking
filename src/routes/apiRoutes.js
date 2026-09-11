@@ -57,6 +57,8 @@ router.get('/customers', async (req, res) => {
       });
       return res.json({
         success: true,
+        count: result.customers.length,
+        data: result.customers,
         ...result
       });
     }
@@ -65,7 +67,9 @@ router.get('/customers', async (req, res) => {
     res.json({
       success: true,
       count: customers.length,
-      data: customers
+      total: customers.length,
+      data: customers,
+      customers: customers
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
