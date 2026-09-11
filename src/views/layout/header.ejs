@@ -26,42 +26,25 @@
           <i class="fa-solid fa-cube"></i>
         </div>
         <div>
-          <span class="brand-title">TurboSpace</span>
-          <span class="brand-tag">EJS Engine</span>
+          <span class="brand-title">Meeting Room Booking</span>
+          <!-- <span class="brand-tag">EJS Engine</span> -->
         </div>
       </a>
 
-      <div class="nav-links">
-        <a href="/customers" class="nav-link <%= activeTab === 'customers' ? 'active' : '' %>">
-          <i class="fa-solid fa-users"></i>
-          <span>Customers</span>
-        </a>
-        <a href="/book<%= selectedCustomer ? '?customerId=' + selectedCustomer.id : '' %>" class="nav-link <%= activeTab === 'book' ? 'active' : '' %>">
-          <i class="fa-solid fa-calendar-plus"></i>
-          <span>Book Room</span>
-        </a>
-        <a href="/bookings" class="nav-link <%= activeTab === 'bookings' ? 'active' : '' %>">
-          <i class="fa-solid fa-clock-rotate-left"></i>
-          <span>All Bookings</span>
-        </a>
-      </div>
-
-      <% if (selectedCustomer) { %>
-        <a href="/customers" class="nav-active-customer" title="Click to switch customer">
-          <img src="<%= selectedCustomer.avatar %>" alt="<%= selectedCustomer.name %>" class="nav-cust-avatar" onerror="this.src='https://ui-avatars.com/api/?name=<%= encodeURIComponent(selectedCustomer.name) %>&background=6366f1&color=fff'">
-          <div class="nav-cust-info">
-            <span class="nav-cust-name"><%= selectedCustomer.name %></span>
-            <span class="nav-cust-label"><%= selectedCustomer.company %> &bull; Switch</span>
+      <div class="nav-right-actions" style="display: flex; align-items: center; gap: 0.75rem;">
+        <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
+          <div class="zoho-nav-badge connected" title="Zoho CRM Connected (<%= zohoStatus.dataCenter %>)">
+            <span class="pulse-dot"></span>
+            <i class="fa-solid fa-cloud-bolt"></i>
+            <span>Zoho CRM Connected</span>
           </div>
-        </a>
-      <% } else { %>
-        <a href="/customers" class="btn btn-secondary btn-sm">
-          <i class="fa-solid fa-user-check"></i>
-          <span>Select Customer</span>
-        </a>
-      <% } %>
+        <% } %>
+      </div>
     </div>
   </nav>
+
+
+
 
   <!-- Alert / Flash notification banner if any -->
   <main class="main-wrapper">

@@ -8,6 +8,8 @@ A modern, lightweight Node.js and Express.js REST API starter configured with ES
 
 - **Runtime:** [Node.js](https://nodejs.org/) (ES Modules / `"type": "module"`)
 - **Framework:** [Express.js](https://expressjs.com/) (v5)
+- **CRM Integration:** [@zohocrm/nodejs-sdk-2.0](https://www.npmjs.com/package/@zohocrm/nodejs-sdk-2.0)
+- **Templating Engine:** [EJS](https://ejs.co/)
 - **Utilities & Middleware:**
   - [cors](https://www.npmjs.com/package/cors) - Cross-Origin Resource Sharing
   - [morgan](https://www.npmjs.com/package/morgan) - HTTP request logger
@@ -21,13 +23,23 @@ A modern, lightweight Node.js and Express.js REST API starter configured with ES
 
 ```text
 turbosoft/
+├── storage/                  # Persisted Zoho CRM SDK tokens and logs
+│   ├── zoho_connection.json
+│   └── zoho_sdk_tokens.txt
 ├── src/
+│   ├── data/                 # Seed data and mock database
 │   ├── middlewares/
 │   │   └── errorHandler.js   # 404 and global error handling middleware
 │   ├── routes/
-│   │   └── index.js          # Route definitions (/ and /health)
+│   │   ├── index.js          # Main customer and meeting room booking routes
+│   │   └── zohoRoutes.js     # Zoho CRM OAuth, connect, status & sync endpoints
+│   ├── services/
+│   │   ├── bookingService.js # Customer & meeting room management service
+│   │   └── zohoCrmService.js # Zoho CRM Node.js SDK 2.0 connection & API service
+│   ├── views/                # EJS UI templates (customers, book, bookings, layout)
 │   ├── app.js                # Express application setup & middleware configuration
 │   └── server.js             # Server initialization & graceful shutdown
+├── public/                   # Static CSS and JS assets
 ├── .env.example              # Template for environment variables
 ├── package.json              # Project dependencies and scripts
 └── README.md                 # Project documentation
@@ -56,21 +68,34 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 3. **Configure environment variables:**
    Copy the example environment configuration file to create your `.env` file:
    ```bash
-   # On Linux/macOS/Git Bash:
-   cp .env.example .env
-
-   # On Windows (Command Prompt):
-   copy .env.example .env
-
    # On Windows (PowerShell):
    Copy-Item .env.example .env
+
+   # On Linux / macOS:
+   cp .env.example .env
    ```
 
-4. **Verify / update `.env` settings:**
+4. **Set your Zoho CRM credentials in `.env`:**
    ```env
    PORT=5000
    NODE_ENV=development
+   ZOHO_API_CLIENT_ID=your_zoho_client_id
+   ZOHO_API_CLIENT_SECRET=your_zoho_client_secret
+   ZOHO_DATA_CENTER=INDataCenter
+   ZOHO_REDIRECT_URI=http://localhost:5000/zoho/callback
    ```
+
+---
+
+## ⚡ Zoho CRM Integration
+
+### OAuth Connection Flow
+1. Open the application at `http://localhost:5000/` (redirects to `/customers`).
+2. Click the **Connect Zoho CRM** button in the header navigation or the hero banner.
+3. Select your Zoho Data Center region (India `.in`, US `.com`, EU `.eu`, AU `.com.au`, JP `.jp`).
+4. Authorize access on Zoho's consent screen.
+5. The application securely persists tokens using SDK's `FileStore` and connects to Zoho CRM.
+6. Click **Sync Zoho CRM** to import CRM Contacts and Leads directly into the customer booking directory.
 
 ---
 
@@ -83,16 +108,22 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 
 ---
 
-## 🔌 API Endpoints
+## 🔌 API & Route Endpoints
 
-| Method | Endpoint | Description | Response Example |
-|---|---|---|---|
-| `GET` | `/` | Root / Welcome message | `{"success": true, "message": "Welcome to the API", "version": "1.0.0"}` |
-| `GET` | `/health` | Server health check & uptime | `{"status": "UP", "timestamp": "...", "uptime": 12.34}` |
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Root / Redirects to customer selection directory (`/customers`) |
+| `GET` | `/customers` | Customer directory & selection view with Zoho CRM connection banner |
+| `POST` | `/customers/new` | Quick-register a new customer profile |
+| `GET` | `/book` | Interactive room selection & time slot picker |
+| `POST` | `/book` | Confirm and create a meeting room reservation |
+| `GET` | `/bookings` | View and filter all room reservations |
+| `POST` | `/bookings/:id/cancel` | Cancel an existing booking reservation |
+| `GET` | `/zoho/connect` | Initiates OAuth authorization with Zoho Accounts |
+| `GET` | `/zoho/callback` | Handles OAuth redirect from Zoho and initializes SDK |
+| `GET` | `/zoho/status` | Returns JSON status of Zoho CRM connection |
+| `POST` | `/zoho/sync` | Syncs Contacts & Leads from Zoho CRM into Customer list |
+| `POST` | `/zoho/token-connect` | Connects via developer Self-Client grant/refresh token |
+| `POST` | `/zoho/disconnect` | Disconnects Zoho CRM and clears stored tokens |
+| `GET` | `/health` | Server health check & uptime endpoint |
 
----
-
-## 🛡 Error Handling
-
-- **404 Not Found:** Automatically catches any unmatched routes and returns a JSON error response with status code `404`.
-- **Centralized Error Handler:** Catches thrown errors and returns standard JSON responses with error message and stack trace (in development mode).

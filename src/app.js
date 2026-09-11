@@ -4,6 +4,8 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import routes from './routes/index.js';
+import zohoRoutes from './routes/zohoRoutes.js';
+import { zohoCrmService } from './services/zohoCrmService.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,8 +27,16 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Global locals for views
+app.use((req, res, next) => {
+  res.locals.zohoStatus = zohoCrmService.getConnectionStatus();
+  next();
+});
+
 // Routes
+app.use('/zoho', zohoRoutes);
 app.use('/', routes);
+
 
 // Error Handlers
 app.use(notFoundHandler);

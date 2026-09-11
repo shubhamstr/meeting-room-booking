@@ -1,203 +1,175 @@
-<%- include('layout/header', { title: 'Select Customer', activeTab: 'customers', selectedCustomer: selectedCustomer, successMessage: successMessage, errorMessage: errorMessage }) %>
+<%- include('layout/header', { title: 'Zoho CRM Integration', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage }) %>
 
-<div class="page-header">
-  <div class="page-title-row">
-    <div>
-      <h1 class="page-title">
-        <i class="fa-solid fa-address-book" style="color: var(--primary-400);"></i>
-        Customer Directory &amp; Selection
-      </h1>
-      <p class="page-subtitle">
-        Search and select a customer to initiate meeting room booking, or register a new client profile.
-      </p>
+<div class="landing-container">
+  <div class="landing-card">
+    <div class="landing-icon-wrap">
+      <i class="fa-solid fa-bolt-lightning"></i>
     </div>
-    <div>
-      <button class="btn btn-primary" data-open-modal="modal-add-customer">
-        <i class="fa-solid fa-user-plus"></i>
-        <span>Add New Customer</span>
-      </button>
-    </div>
-  </div>
-</div>
+    
+    <h1 class="landing-title">Connect to Zoho CRM</h1>
+    <p class="landing-subtitle">
+      Authorize and establish a secure connection with Zoho CRM APIs using <code>@zohocrm/nodejs-sdk-2.0</code>.
+    </p>
 
-<!-- Key Metrics Ribbon -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-icon-wrap indigo">
-      <i class="fa-solid fa-users"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-val"><%= stats.totalCustomers %></div>
-      <div class="stat-lbl">Registered Customers</div>
-    </div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-icon-wrap emerald">
-      <i class="fa-solid fa-door-open"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-val"><%= stats.totalRooms %></div>
-      <div class="stat-lbl">Meeting Spaces</div>
-    </div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-icon-wrap amber">
-      <i class="fa-solid fa-calendar-check"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-val"><%= stats.todayBookingsCount %></div>
-      <div class="stat-lbl">Bookings Today</div>
-    </div>
-  </div>
-
-  <div class="stat-card">
-    <div class="stat-icon-wrap cyan">
-      <i class="fa-solid fa-business-time"></i>
-    </div>
-    <div class="stat-info">
-      <div class="stat-val"><%= stats.activeBookings %></div>
-      <div class="stat-lbl">Confirmed Sessions</div>
-    </div>
-  </div>
-</div>
-
-<!-- Search Bar Box -->
-<div class="search-filter-box">
-  <div class="search-input-group">
-    <i class="fa-solid fa-magnifying-glass"></i>
-    <input 
-      type="text" 
-      id="customer-search-input" 
-      class="search-input" 
-      placeholder="Search by customer name, company, email, or department..." 
-      value="<%= searchQuery || '' %>"
-      autocomplete="off"
-    >
-  </div>
-  <div class="filter-group">
-    <span style="font-size: 0.85rem; color: var(--text-muted);">Showing <strong><%= customers.length %></strong> customers</span>
-  </div>
-</div>
-
-<!-- Customers Grid -->
-<div class="customers-grid" id="customers-grid">
-  <% customers.forEach(cust => { %>
-    <div 
-      class="customer-card" 
-      data-id="<%= cust.id %>"
-      data-name="<%= cust.name %>"
-      data-email="<%= cust.email %>"
-      data-company="<%= cust.company %>"
-      data-department="<%= cust.department %>"
-      style="--card-accent: <%= cust.badgeColor %>;"
-    >
-      <div class="customer-card-header">
-        <img 
-          src="<%= cust.avatar %>" 
-          alt="<%= cust.name %>" 
-          class="cust-avatar-large"
-          onerror="this.src='https://ui-avatars.com/api/?name=<%= encodeURIComponent(cust.name) %>&background=6366f1&color=fff'"
-        >
-        <div>
-          <h3 class="cust-card-title"><%= cust.name %></h3>
-          <div class="cust-company">
-            <i class="fa-solid fa-building" style="font-size: 0.75rem; margin-right: 0.25rem;"></i>
-            <%= cust.company %>
+    <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
+      <!-- Connected State -->
+      <div class="landing-status-box connected">
+        <div class="status-indicator">
+          <span class="pulse-dot"></span>
+        </div>
+        <div class="status-details">
+          <div class="status-label">Zoho CRM Connected</div>
+          <div class="status-org">
+            Organization: <strong><%= zohoStatus.organization ? zohoStatus.organization.companyName : 'Connected Account' %></strong>
+          </div>
+          <div class="status-meta">
+            Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; Client ID: <span><%= zohoStatus.clientId %></span>
           </div>
         </div>
       </div>
 
-      <div class="customer-details">
-        <div class="cust-detail-item">
-          <i class="fa-regular fa-envelope"></i>
-          <span><%= cust.email %></span>
+      <div class="landing-actions">
+        <form action="/zoho/disconnect" method="POST" style="margin: 0;">
+          <button type="submit" class="btn btn-secondary">
+            <i class="fa-solid fa-plug-circle-xmark"></i>
+            <span>Disconnect CRM</span>
+          </button>
+        </form>
+      </div>
+    <% } else { %>
+      <!-- Disconnected State: Single Connect Button -->
+      <div class="landing-status-box disconnected">
+        <div class="status-indicator">
+          <span class="pulse-dot grey"></span>
         </div>
-        <div class="cust-detail-item">
-          <i class="fa-solid fa-phone"></i>
-          <span><%= cust.phone %></span>
-        </div>
-        <div class="cust-detail-item">
-          <i class="fa-solid fa-sitemap"></i>
-          <span><%= cust.department %></span>
+        <div class="status-details">
+          <div class="status-label">Status: Not Connected</div>
+          <div class="status-meta">
+            Click below to authorize via Zoho Accounts OAuth 2.0
+          </div>
         </div>
       </div>
 
-      <div class="customer-card-footer">
-        <div class="booking-badge">
-          <i class="fa-solid fa-ticket" style="color: var(--primary-400); margin-right: 0.3rem;"></i>
-          <%= cust.bookingCount %> <%= cust.bookingCount === 1 ? 'Booking' : 'Bookings' %>
-        </div>
-
-        <a href="/book?customerId=<%= cust.id %>" class="btn btn-primary btn-sm">
-          <span>Book Room</span>
-          <i class="fa-solid fa-arrow-right"></i>
+      <div class="landing-actions">
+        <a href="/zoho/connect" class="btn btn-zoho btn-lg">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i>
+          <span>Connect to Zoho CRM</span>
         </a>
       </div>
-    </div>
-  <% }) %>
-</div>
-
-<!-- Empty State for Search -->
-<div class="empty-state" id="no-customers-found" style="display: none;">
-  <div class="empty-state-icon">
-    <i class="fa-solid fa-user-xmark"></i>
-  </div>
-  <p class="empty-state-text">No matching customers found. Try adjusting your search query or add a new customer.</p>
-  <button class="btn btn-primary btn-sm" data-open-modal="modal-add-customer">
-    <i class="fa-solid fa-plus"></i> Add New Customer
-  </button>
-</div>
-
-<!-- Modal: Add New Customer -->
-<div class="modal-overlay" id="modal-add-customer">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 class="modal-title">
-        <i class="fa-solid fa-user-plus" style="color: var(--primary-400); margin-right: 0.4rem;"></i>
-        Add Customer Profile
-      </h2>
-      <button class="modal-close" data-close-modal>&times;</button>
-    </div>
-    
-    <form action="/customers/new" method="POST">
-      <div class="form-group">
-        <label class="form-label" for="cust-name">Full Name *</label>
-        <input type="text" id="cust-name" name="name" class="form-input" placeholder="e.g. Jordan Miller" required>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="cust-email">Email Address *</label>
-        <input type="email" id="cust-email" name="email" class="form-input" placeholder="e.g. jordan.m@company.com" required>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="cust-company">Company / Organization *</label>
-        <input type="text" id="cust-company" name="company" class="form-input" placeholder="e.g. Apex Global Tech" required>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-        <div class="form-group">
-          <label class="form-label" for="cust-dept">Department</label>
-          <input type="text" id="cust-dept" name="department" class="form-input" placeholder="e.g. Product Strategy">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="cust-phone">Phone Number</label>
-          <input type="text" id="cust-phone" name="phone" class="form-input" placeholder="+1 (555) 000-0000">
-        </div>
-      </div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-        <button type="submit" class="btn btn-primary">
-          <i class="fa-solid fa-check"></i>
-          <span>Save &amp; Continue</span>
-        </button>
-      </div>
-    </form>
+    <% } %>
   </div>
 </div>
+
+<style>
+  .landing-container {
+    min-height: calc(80vh - 120px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .landing-card {
+    background: linear-gradient(145deg, rgba(22, 30, 48, 0.9), rgba(15, 20, 32, 0.95));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 3rem 2.5rem;
+    max-width: 580px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(16px);
+  }
+
+  .landing-icon-wrap {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 1.5rem;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ea4335, #ff5722);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(234, 67, 53, 0.4);
+  }
+
+  .landing-title {
+    font-size: 1.85rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    margin-bottom: 0.75rem;
+  }
+
+  .landing-subtitle {
+    font-size: 0.98rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 2rem;
+  }
+
+  .landing-subtitle code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+    color: var(--primary-400);
+    font-size: 0.88rem;
+  }
+
+  .landing-status-box {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    gap: 1rem;
+    padding: 1.15rem 1.35rem;
+    border-radius: 14px;
+    margin-bottom: 2rem;
+    background: rgba(18, 24, 38, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .landing-status-box.connected {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.35);
+  }
+
+  .landing-status-box.disconnected {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .status-label {
+    font-weight: 700;
+    font-size: 0.98rem;
+    color: #ffffff;
+  }
+
+  .status-org {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+  }
+
+  .status-meta {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 0.25rem;
+  }
+
+  .landing-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .btn-lg {
+    padding: 0.85rem 2rem;
+    font-size: 1.05rem;
+    border-radius: 12px;
+  }
+</style>
 
 <%- include('layout/footer') %>
