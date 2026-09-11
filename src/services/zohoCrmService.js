@@ -424,7 +424,15 @@ class ZohoCrmService {
       console.warn('[Zoho CRM] Note: Could not create queue entry:', e.message);
     }
 
+    // Retrieve all existing customers in PostgreSQL to check existence
+    const existingCustomers = await bookingService.getCustomers();
+    const existingZohoIds = new Set(existingCustomers.map(c => String(c.zohoId || '').trim()).filter(Boolean));
+    const existingEmails = new Set(existingCustomers.map(c => String(c.email || '').trim().toLowerCase()).filter(Boolean));
+
+    console.log(`[Zoho CRM Sync] Found ${existingCustomers.length} existing customer profiles in PostgreSQL.`);
+
     let syncedCount = 0;
+    let alreadyExistingCount = 0;
     const importedCustomers = [];
 
     // 1. Fetch Contacts from Zoho CRM
@@ -439,6 +447,13 @@ class ZohoCrmService {
         const department = typeof contact.Department === 'string' ? contact.Department : 'Corporate';
         const zohoId = String(contact.id || '');
 
+        // If contact already exists in PostgreSQL by Zoho ID or Email, DO NOT re-fetch / re-import
+        if ((zohoId && existingZohoIds.has(zohoId)) || (email && existingEmails.has(email.toLowerCase()))) {
+          console.log(`[Zoho Sync] Contact "${fullName}" (${zohoId || email}) already exists in PostgreSQL. Skipping.`);
+          alreadyExistingCount++;
+          continue;
+        }
+
         const cust = await bookingService.addCustomer({
           id: zohoId ? `zoho-${zohoId}` : undefined,
           zohoId: zohoId || null,
@@ -449,6 +464,9 @@ class ZohoCrmService {
           phone,
           source: 'Zoho CRM Contact'
         });
+
+        if (zohoId) existingZohoIds.add(zohoId);
+        if (email) existingEmails.add(email.toLowerCase());
 
         syncedCount++;
         importedCustomers.push(cust);
@@ -469,6 +487,13 @@ class ZohoCrmService {
         const department = typeof lead.Industry === 'object' ? (lead.Industry.name || lead.Industry.value || 'Prospect') : (lead.Industry || 'Prospect');
         const zohoId = String(lead.id || '');
 
+        // If lead already exists in PostgreSQL by Zoho ID or Email, DO NOT re-fetch / re-import
+        if ((zohoId && existingZohoIds.has(zohoId)) || (email && existingEmails.has(email.toLowerCase()))) {
+          console.log(`[Zoho Sync] Lead "${fullName}" (${zohoId || email}) already exists in PostgreSQL. Skipping.`);
+          alreadyExistingCount++;
+          continue;
+        }
+
         const cust = await bookingService.addCustomer({
           id: zohoId ? `zoho-lead-${zohoId}` : undefined,
           zohoId: zohoId || null,
@@ -480,6 +505,9 @@ class ZohoCrmService {
           source: 'Zoho CRM Lead'
         });
 
+        if (zohoId) existingZohoIds.add(zohoId);
+        if (email) existingEmails.add(email.toLowerCase());
+
         syncedCount++;
         importedCustomers.push(cust);
       }
@@ -490,6 +518,7 @@ class ZohoCrmService {
     if (this.currentConnection) {
       this.currentConnection.lastSyncedAt = new Date().toISOString();
       this.currentConnection.lastSyncCount = syncedCount;
+      this.currentConnection.alreadyExistingCount = alreadyExistingCount;
       this.savePersistedState(this.currentConnection);
     }
 
@@ -506,6 +535,7 @@ class ZohoCrmService {
 
     return {
       syncedCount,
+      alreadyExistingCount,
       totalCustomers: currentCustomers.length,
       importedCustomers
     };
@@ -527,7 +557,8 @@ class ZohoCrmService {
       organization: this.currentConnection?.organization || null,
       connectedAt: this.currentConnection?.connectedAt || null,
       lastSyncedAt: this.currentConnection?.lastSyncedAt || null,
-      lastSyncCount: this.currentConnection?.lastSyncCount || 0
+      lastSyncCount: this.currentConnection?.lastSyncCount || 0,
+      alreadyExistingCount: this.currentConnection?.alreadyExistingCount || 0
     };
   }
 

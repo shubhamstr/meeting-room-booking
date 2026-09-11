@@ -89,6 +89,29 @@ class BookingService {
     return res.rows[0] || null;
   }
 
+  async getCustomerByZohoId(zohoId) {
+    if (!zohoId) return null;
+    const res = await query(
+      `SELECT 
+        id,
+        zoho_id AS "zohoId",
+        name,
+        email,
+        phone,
+        company,
+        department,
+        avatar,
+        initials,
+        badge_color AS "badgeColor",
+        source,
+        created_at AS "createdAt"
+       FROM customers 
+       WHERE zoho_id = $1 LIMIT 1;`,
+      [String(zohoId)]
+    );
+    return res.rows[0] || null;
+  }
+
   async addCustomer({ id, zohoId, name, email, phone, company, department, avatar, source = 'Direct' }) {
     const safeName = String(name || '').trim();
     const safeEmail = String(email || '').trim().toLowerCase();
@@ -96,6 +119,20 @@ class BookingService {
     const safeCompany = company ? (typeof company === 'object' ? (company.name || company.value || 'Independent Corp') : String(company).trim()) : 'Independent Corp';
     const safeDept = department ? (typeof department === 'object' ? (department.name || department.value || 'General') : String(department).trim()) : 'General';
     const customerId = id || `cust-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    // If customer already exists in PostgreSQL by zohoId or email, do not re-insert or overwrite
+    if (zohoId) {
+      const existingByZoho = await this.getCustomerByZohoId(zohoId);
+      if (existingByZoho) {
+        return existingByZoho;
+      }
+    }
+    if (safeEmail) {
+      const existingByEmail = await this.getCustomerByEmail(safeEmail);
+      if (existingByEmail) {
+        return existingByEmail;
+      }
+    }
 
     const initials = safeName
       .split(' ')
@@ -112,14 +149,7 @@ class BookingService {
     const res = await query(
       `INSERT INTO customers (id, zoho_id, name, email, phone, company, department, avatar, initials, badge_color, source, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
-       ON CONFLICT (email) DO UPDATE SET
-         zoho_id = COALESCE(EXCLUDED.zoho_id, customers.zoho_id),
-         name = EXCLUDED.name,
-         phone = EXCLUDED.phone,
-         company = EXCLUDED.company,
-         department = EXCLUDED.department,
-         source = EXCLUDED.source,
-         updated_at = CURRENT_TIMESTAMP
+       ON CONFLICT (email) DO NOTHING
        RETURNING 
          id,
          zoho_id AS "zohoId",
@@ -136,7 +166,12 @@ class BookingService {
       [customerId, zohoId || null, safeName, safeEmail, safePhone, safeCompany, safeDept, defaultAvatar, initials, randomColor, source]
     );
 
-    return res.rows[0];
+    if (res.rows && res.rows[0]) {
+      return res.rows[0];
+    }
+
+    // Fallback if conflict prevented insertion
+    return (await this.getCustomerByEmail(safeEmail)) || (zohoId ? await this.getCustomerByZohoId(zohoId) : null);
   }
 
   // --- Room Operations (PostgreSQL) ---

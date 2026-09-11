@@ -138,15 +138,24 @@ const handleZohoSync = async (req, res) => {
 
     const result = await zohoCrmService.syncCrmContactsToBookingService(bookingService);
 
+    let feedbackMsg = '';
+    if (result.syncedCount === 0 && result.alreadyExistingCount > 0) {
+      feedbackMsg = `All records already exist in PostgreSQL (${result.alreadyExistingCount} contacts/leads verified). No duplicate data was fetched.`;
+    } else if (result.syncedCount > 0) {
+      feedbackMsg = `Synced ${result.syncedCount} new contacts/leads from Zoho CRM (${result.alreadyExistingCount} already exist in PostgreSQL). Total: ${result.totalCustomers}`;
+    } else {
+      feedbackMsg = `Zoho CRM sync completed. Total customers in PostgreSQL: ${result.totalCustomers}`;
+    }
+
     if (wantsJson(req)) {
       return res.json({
         success: true,
-        message: `Synced ${result.syncedCount} new contacts/leads from Zoho CRM!`,
+        message: feedbackMsg,
         data: result
       });
     }
 
-    res.redirect('/customers?success=' + encodeURIComponent(`Synced ${result.syncedCount} new contacts/leads from Zoho CRM! Total customers: ${result.totalCustomers}`));
+    res.redirect('/customers?success=' + encodeURIComponent(feedbackMsg));
   } catch (err) {
     if (wantsJson(req)) {
       return res.status(500).json({ success: false, error: err.message });
@@ -188,14 +197,33 @@ router.get('/status', (req, res) => {
   });
 });
 
-// 7. Get Contacts from Zoho CRM directly
+// 7. Get Contacts (Returns from PostgreSQL cache if present, otherwise fetches from Zoho CRM)
 router.get('/contacts', async (req, res) => {
   try {
+    const existing = await bookingService.getCustomers();
+    const zohoCustomers = existing.filter(c => c.zohoId || (c.source && c.source.includes('Zoho')));
+
+    // If data already exists in PostgreSQL and force refresh is not requested, return PostgreSQL records
+    if (zohoCustomers.length > 0 && req.query.force !== 'true') {
+      return res.json({
+        success: true,
+        source: 'PostgreSQL (Database)',
+        count: zohoCustomers.length,
+        data: zohoCustomers
+      });
+    }
+
     if (!zohoCrmService.isConnected()) {
       return res.status(400).json({ success: false, error: 'Zoho CRM is not connected' });
     }
-    const contacts = await zohoCrmService.fetchContacts(1, 100);
-    res.json({ success: true, count: contacts.length, data: contacts });
+
+    const contacts = await zohoCrmService.fetchRecords('Contacts');
+    res.json({
+      success: true,
+      source: 'Zoho CRM (Live API)',
+      count: contacts.length,
+      data: contacts
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
