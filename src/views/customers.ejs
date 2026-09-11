@@ -122,15 +122,10 @@
 
       <div class="compact-card-actions">
         <% if (typeof calendarStatus !== 'undefined' && calendarStatus && calendarStatus.connected) { %>
-          <form action="/api/calendar/sync" method="POST" style="margin: 0; flex: 1;">
-            <button type="submit" class="btn btn-primary btn-sm" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); border-color: #10b981;">
-              <i class="fa-solid fa-cloud-arrow-up"></i>
-              <span>Sync Bookings</span>
-            </button>
-          </form>
-          <form action="/api/calendar/disconnect" method="POST" style="margin: 0;">
-            <button type="submit" class="btn btn-secondary btn-sm" title="Disconnect Calendar">
+          <form action="/api/calendar/disconnect" method="POST" style="margin: 0; width: 100%;">
+            <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;" title="Disconnect Calendar">
               <i class="fa-solid fa-plug-circle-xmark"></i>
+              <span>Disconnect Calendar</span>
             </button>
           </form>
         <% } else { %>
