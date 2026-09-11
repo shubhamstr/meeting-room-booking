@@ -163,21 +163,37 @@ router.get('/rooms/:id/availability', async (req, res) => {
   }
 });
 
-// Handle Booking Form Submission
-router.post('/book', async (req, res) => {
-  try {
-    const { customerId, roomId, date, slotId, title, attendees, notes } = req.body;
+// Handle Booking Submission (supports both API JSON and Form Redirects)
+const handleBookingPost = async (req, res) => {
+  const isJson = req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || req.is('application/json');
 
-    if (!customerId || !roomId || !date || !slotId) {
-      return res.redirect(`/rooms/${roomId}/availability?date=${date}&customerId=${customerId}&error=Please+complete+room+and+slot+selection.`);
+  try {
+    const customerId = req.body.customerId || req.body.customer_id || req.body['customer ID'] || req.body.customer;
+    const roomId = req.body.roomId || req.body.room_id || req.body['room ID'] || req.body.room;
+    const start = req.body.start || req.body.startTime || req.body.start_time;
+    const end = req.body.end || req.body.endTime || req.body.end_time;
+    const purpose = req.body.purpose || req.body.title || req.body.notes || 'Meeting Room Reservation';
+    const date = req.body.date;
+    const slotId = req.body.slotId || req.body.slot_id;
+    const attendees = req.body.attendees;
+    const notes = req.body.notes;
+
+    if (!roomId) {
+      if (isJson) {
+        return res.status(400).json({ success: false, error: 'Room ID is required.' });
+      }
+      return res.redirect(`/rooms?error=Room+ID+is+required.`);
     }
 
     const newBooking = await bookingService.createBooking({
       customerId,
       roomId,
+      start,
+      end,
+      purpose,
       date,
       slotId,
-      title,
+      title: purpose,
       attendees,
       notes
     });
@@ -190,20 +206,36 @@ router.post('/book', async (req, res) => {
         if (event && event.id) {
           await bookingService.updateBooking(newBooking.id, { googleEventId: event.id });
           calendarSuccessNotice = '+Event+synced+to+Google+Calendar!';
+          newBooking.googleEventId = event.id;
         }
       } catch (calErr) {
         console.warn('Google Calendar sync notice:', calErr.message);
       }
     }
 
+    if (isJson) {
+      return res.status(201).json({
+        success: true,
+        message: `Meeting room booked successfully!`,
+        data: newBooking,
+        calendarSynced: !!newBooking.googleEventId
+      });
+    }
+
     res.redirect(`/bookings?success=Meeting+room+booked+successfully!+Booking+Ref:+${newBooking.id}${calendarSuccessNotice}`);
   } catch (err) {
+    if (isJson) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
     const custId = req.body.customerId || '';
     const rId = req.body.roomId || '';
     const dt = req.body.date || getTodayDateString(0);
     res.redirect(`/rooms/${rId}/availability?date=${dt}&customerId=${custId}&error=${encodeURIComponent(err.message)}`);
   }
-});
+};
+
+router.post('/book', handleBookingPost);
+router.post('/bookings', handleBookingPost);
 
 // 4. Bookings List & Overview
 router.get('/bookings', async (req, res) => {

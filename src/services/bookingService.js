@@ -408,21 +408,103 @@ class BookingService {
 
   // --- Booking Operations (PostgreSQL) ---
 
-  async createBooking({ customerId, roomId, date, slotId, title, attendees, notes }) {
-    const customer = await this.getCustomerById(customerId);
-    if (!customer) {
-      throw new Error('Customer not found. Please pick or register a valid customer.');
+  async createBooking(params = {}) {
+    // Support multiple field casing / naming conventions
+    const customerId = params.customerId || params.customer_id || params['customer ID'] || params.customer;
+    const roomId = params.roomId || params.room_id || params['room ID'] || params.room;
+    const start = params.start || params.startTime || params.start_time || params['start time'];
+    const end = params.end || params.endTime || params.end_time || params['end time'];
+    const purpose = params.purpose || params.title || params.notes || 'Meeting Room Reservation';
+    const attendees = parseInt(params.attendees, 10) || 2;
+    const notes = params.notes?.trim() || '';
+
+    let date = params.date ? String(params.date).trim() : '';
+    let slotId = params.slotId ? String(params.slotId).trim() : '';
+
+    if (!roomId) {
+      throw new Error('Room ID is required.');
     }
 
     const room = await this.getRoomById(roomId);
     if (!room) {
-      throw new Error('Meeting room not found.');
+      throw new Error(`Meeting room "${roomId}" not found.`);
     }
 
-    const slots = await this.getAllSlots();
-    const slot = slots.find(s => s.id === slotId);
+    // Resolve customer
+    let customer = null;
+    if (customerId) {
+      customer = await this.getCustomerById(customerId);
+    } else {
+      // If no customer ID provided, fallback to first available customer in DB
+      const allCustomers = await this.getCustomers();
+      if (allCustomers.length > 0) {
+        customer = allCustomers[0];
+      }
+    }
+
+    if (!customer) {
+      throw new Error('Customer not found. Please pick or register a valid customer.');
+    }
+
+    const allSlots = await this.getAllSlots();
+
+    // Parse start datetime / string if provided
+    if (start) {
+      const startStr = String(start).trim();
+      // 1. Check for Date in start (e.g., 2026-09-11...)
+      const isoDateMatch = startStr.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (isoDateMatch && !date) {
+        date = isoDateMatch[1];
+      }
+
+      // 2. Check if start directly matches a slotId like "09:00-10:00"
+      const directSlot = allSlots.find(s => s.id === startStr);
+      if (directSlot) {
+        slotId = directSlot.id;
+      } else {
+        // 3. Extract hour from start string
+        let hour = null;
+        const timeMatch12 = startStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        const timeMatch24 = startStr.match(/(?:T|\s|^)(\d{1,2}):(\d{2})/);
+
+        if (timeMatch12) {
+          let h = parseInt(timeMatch12[1], 10);
+          const period = timeMatch12[3].toUpperCase();
+          if (period === 'PM' && h < 12) h += 12;
+          if (period === 'AM' && h === 12) h = 0;
+          hour = h;
+        } else if (timeMatch24) {
+          hour = parseInt(timeMatch24[1], 10);
+        }
+
+        if (hour !== null) {
+          const hourPrefix = String(hour).padStart(2, '0') + ':';
+          const matchedSlot = allSlots.find(s => s.id.startsWith(hourPrefix));
+          if (matchedSlot) {
+            slotId = matchedSlot.id;
+          }
+        }
+      }
+    }
+
+    if (!date) {
+      date = getTodayDateString(0);
+    }
+
+    // If slotId is still not determined, pick the first available free slot for this room on the given date
+    if (!slotId) {
+      const roomAvailability = await this.getSlotsWithAvailability(roomId, date);
+      const freeSlot = roomAvailability.find(s => s.isAvailable);
+      if (freeSlot) {
+        slotId = freeSlot.id;
+      } else {
+        throw new Error(`No available time slots remaining for room "${room.name}" on ${date}.`);
+      }
+    }
+
+    const slot = allSlots.find(s => s.id === slotId);
     if (!slot) {
-      throw new Error('Invalid time slot selected.');
+      throw new Error(`Invalid time slot selected: "${slotId}".`);
     }
 
     // Check slot collision in PostgreSQL
@@ -438,9 +520,7 @@ class BookingService {
     }
 
     const bookingId = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
-    const bookingTitle = title?.trim() || `Team Sync - ${customer.company}`;
-    const attendeeCount = parseInt(attendees, 10) || 2;
-    const bookingNotes = notes?.trim() || '';
+    const bookingTitle = purpose?.trim() || `Meeting - ${customer.company || customer.name}`;
     const totalCost = room.hourlyRate;
 
     const res = await query(
@@ -461,13 +541,16 @@ class BookingService {
         status,
         google_event_id AS "googleEventId",
         created_at AS "createdAt";`,
-      [bookingId, customer.id, room.id, date, slot.id, slot.label, bookingTitle, attendeeCount, bookingNotes, totalCost]
+      [bookingId, customer.id, room.id, date, slot.id, slot.label, bookingTitle, attendees, notes, totalCost]
     );
 
     const newBooking = res.rows[0];
 
     return {
       ...newBooking,
+      start: `${date}T${slot.id.split('-')[0]}:00`,
+      end: `${date}T${slot.id.split('-')[1]}:00`,
+      purpose: bookingTitle,
       customerName: customer.name,
       customerCompany: customer.company,
       roomName: room.name

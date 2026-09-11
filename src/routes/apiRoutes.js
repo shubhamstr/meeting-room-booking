@@ -192,21 +192,32 @@ router.get('/bookings', async (req, res) => {
 
 router.post('/bookings', async (req, res) => {
   try {
-    const { customerId, roomId, date, slotId, title, attendees, notes } = req.body;
+    const customerId = req.body.customerId || req.body.customer_id || req.body['customer ID'] || req.body['customerId'] || req.body.customer;
+    const roomId = req.body.roomId || req.body.room_id || req.body['room ID'] || req.body['roomId'] || req.body.room;
+    const start = req.body.start || req.body.startTime || req.body.start_time || req.body['start time'];
+    const end = req.body.end || req.body.endTime || req.body.end_time || req.body['end time'];
+    const purpose = req.body.purpose || req.body.title || req.body.notes || 'Meeting Room Reservation';
+    const date = req.body.date;
+    const slotId = req.body.slotId || req.body.slot_id;
+    const attendees = req.body.attendees;
+    const notes = req.body.notes;
 
-    if (!customerId || !roomId || !date || !slotId) {
+    if (!roomId) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: customerId, roomId, date, and slotId are required.'
+        error: 'Missing required field: room ID (or roomId) is required.'
       });
     }
 
     const newBooking = await bookingService.createBooking({
       customerId,
       roomId,
+      start,
+      end,
+      purpose,
       date,
       slotId,
-      title,
+      title: purpose,
       attendees,
       notes
     });
@@ -227,7 +238,7 @@ router.post('/bookings', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Meeting room booked successfully in PostgreSQL!',
+      message: `Meeting room "${newBooking.roomName}" booked successfully for ${newBooking.slotLabel} on ${newBooking.date}!`,
       data: newBooking,
       calendarSynced: !!newBooking.googleEventId
     });

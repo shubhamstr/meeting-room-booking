@@ -727,12 +727,15 @@ function initRoomsDirectory() {
 }
 
 // --- 3. Room Availability & Free/Busy Slots Controller (GET /api/rooms/:id/availability) ---
+// --- 3. Room Availability & Instant Slot Booking Controller (GET /api/rooms/:id/availability -> POST /bookings) ---
 function initRoomAvailability() {
   const datePicker = document.getElementById('slot-date-picker');
   if (!datePicker) return; // Not on room availability view
 
   const roomId = datePicker.getAttribute('data-room-id');
   const customerId = datePicker.getAttribute('data-customer-id') || '';
+  const customerName = datePicker.getAttribute('data-customer-name') || 'Customer';
+  const roomName = datePicker.getAttribute('data-room-name') || 'Meeting Room';
   const refreshSlotsBtn = document.getElementById('refresh-slots-btn');
   const refreshSlotsIcon = document.getElementById('refresh-slots-icon');
   const freeSlotsGrid = document.getElementById('free-slots-grid');
@@ -743,15 +746,10 @@ function initRoomAvailability() {
   const freeHeaderCount = document.getElementById('free-slots-header-count');
   const busyHeaderCount = document.getElementById('busy-slots-header-count');
   const apiDateDisplay = document.getElementById('api-date-display');
-  const summaryDateVal = document.getElementById('summary-date-val');
-  const summarySlotVal = document.getElementById('summary-slot-val');
-  const formSlotId = document.getElementById('form-slot-id');
-  const formDate = document.getElementById('form-date');
-  const confirmBtn = document.getElementById('book-slot-confirm-btn');
   const loadingState = document.getElementById('slots-loading-state');
   const quickDateBtns = document.querySelectorAll('.quick-date-btn');
 
-  let selectedSlot = null;
+  let isBookingInProgress = false;
 
   // Helper to format date offset
   function getDateString(offset = 0) {
@@ -786,8 +784,6 @@ function initRoomAvailability() {
 
       // Update date references
       if (apiDateDisplay) apiDateDisplay.textContent = targetDate;
-      if (summaryDateVal) summaryDateVal.textContent = targetDate;
-      if (formDate) formDate.value = targetDate;
       if (datePicker) datePicker.value = targetDate;
 
       // Update counter badges
@@ -796,18 +792,6 @@ function initRoomAvailability() {
       if (totalCountBadge) totalCountBadge.innerHTML = `<i class="fa-solid fa-clock"></i> <strong>${allSlots.length}</strong> Total`;
       if (freeHeaderCount) freeHeaderCount.textContent = freeSlots.length;
       if (busyHeaderCount) busyHeaderCount.textContent = busySlots.length;
-
-      // Reset slot selection on date change
-      selectedSlot = null;
-      if (formSlotId) formSlotId.value = '';
-      if (summarySlotVal) {
-        summarySlotVal.innerHTML = `<i class="fa-solid fa-arrow-pointer"></i> Please pick a slot`;
-        summarySlotVal.classList.remove('active-slot-selected');
-      }
-      if (confirmBtn) {
-        confirmBtn.disabled = true;
-        confirmBtn.classList.remove('pulse-ready');
-      }
 
       // Render Free Slots
       renderFreeSlots(freeSlots, json.room ? json.room.hourlyRate : 0);
@@ -850,6 +834,7 @@ function initRoomAvailability() {
         data-slot-label="${escapeHtml(slot.label)}"
         data-slot-time="${escapeHtml(slot.time)}"
         data-slot-period="${escapeHtml(slot.period)}"
+        title="Click to instantly book ${escapeHtml(slot.label)}"
       >
         <div class="slot-card-top">
           <span class="slot-period-tag">${escapeHtml(slot.period)}</span>
@@ -862,7 +847,7 @@ function initRoomAvailability() {
         </div>
         <div class="slot-card-bottom">
           <span class="slot-price-hint">$${hourlyRate}/hr</span>
-          <span class="slot-action-text"><i class="fa-solid fa-hand-pointer"></i> Select</span>
+          <span class="slot-action-text"><i class="fa-solid fa-calendar-check"></i> Book Now</span>
         </div>
       </div>
     `).join('');
@@ -904,33 +889,161 @@ function initRoomAvailability() {
     `).join('');
   }
 
+  // Directly call API POST /bookings (customer ID, room ID, start, end, purpose) upon selecting slot
+  async function bookSlotDirectly(slotCard, slotId, slotLabel) {
+    if (isBookingInProgress) return;
+    isBookingInProgress = true;
+
+    const originalHtml = slotCard.innerHTML;
+    slotCard.classList.add('booking-in-progress');
+    slotCard.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem 0; gap: 0.5rem;">
+        <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 1.5rem; color: #6ee7b7;"></i>
+        <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">Reserving space...</span>
+      </div>
+    `;
+
+    const currentDate = datePicker.value || getDateString(0);
+    const [startTimeStr, endTimeStr] = (slotLabel || slotId).split('-').map(s => s.trim());
+    const startPayload = `${currentDate} ${startTimeStr}`;
+    const endPayload = `${currentDate} ${endTimeStr || startTimeStr}`;
+    const purposePayload = `Meeting - ${customerName || 'Client'}`;
+
+    try {
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          customerId: customerId,
+          roomId: roomId,
+          start: startPayload,
+          end: endPayload,
+          purpose: purposePayload,
+          date: currentDate,
+          slotId: slotId
+        })
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.success) {
+        throw new Error(json.error || 'Failed to book slot.');
+      }
+
+      const booking = json.data || {};
+
+      // Show high-visibility popup confirmation and redirect to bookings page
+      showBookingSuccessModal(booking, slotLabel, currentDate);
+
+    } catch (err) {
+      console.error('Error in direct POST /bookings:', err);
+      showNotification(`Booking failed: ${err.message}`, 'error');
+      slotCard.classList.remove('booking-in-progress');
+      slotCard.innerHTML = originalHtml;
+    } finally {
+      isBookingInProgress = false;
+    }
+  }
+
+  // Popup Confirmation Modal & Redirect to /bookings
+  function showBookingSuccessModal(booking, slotLabel, currentDate) {
+    // Remove existing modal if present
+    const existingModal = document.getElementById('booking-confirmation-popup');
+    if (existingModal) existingModal.remove();
+
+    const bookingId = booking.id || 'Confirmed';
+    const displayRoom = booking.roomName || roomName;
+    const displayCust = booking.customerName || customerName;
+    const displayDate = booking.date || currentDate;
+    const displaySlot = booking.slotLabel || slotLabel;
+    const isCalendarSynced = !!booking.googleEventId || !!booking.calendarSynced;
+
+    const modal = document.createElement('div');
+    modal.id = 'booking-confirmation-popup';
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal-content booking-success-modal-content fade-in-row">
+        <div class="success-icon-wrap">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+
+        <h2 class="success-title">Booking Confirmed!</h2>
+        <p class="success-subtitle">Meeting room successfully reserved &amp; saved to PostgreSQL.</p>
+
+        <div class="success-details-card">
+          <div class="success-detail-row">
+            <span class="label"><i class="fa-solid fa-ticket"></i> Reference ID:</span>
+            <span class="value" style="color: var(--primary-400); font-family: monospace;">${escapeHtml(bookingId)}</span>
+          </div>
+          <div class="success-detail-row">
+            <span class="label"><i class="fa-solid fa-door-open"></i> Space:</span>
+            <span class="value">${escapeHtml(displayRoom)}</span>
+          </div>
+          <div class="success-detail-row">
+            <span class="label"><i class="fa-regular fa-calendar-check"></i> Schedule:</span>
+            <span class="value" style="color: #6ee7b7;">${escapeHtml(displayDate)} &bull; ${escapeHtml(displaySlot)}</span>
+          </div>
+          <div class="success-detail-row">
+            <span class="label"><i class="fa-solid fa-user-check"></i> Customer:</span>
+            <span class="value">${escapeHtml(displayCust)}</span>
+          </div>
+          ${isCalendarSynced ? `
+            <div class="success-detail-row" style="margin-top: 0.25rem; padding-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.08);">
+              <span class="label"><i class="fa-solid fa-calendar-days" style="color: #60a5fa;"></i> Google Calendar:</span>
+              <span class="value" style="color: #93c5fd; font-size: 0.8rem;"><i class="fa-solid fa-check-double"></i> Synced</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="redirect-countdown-bar">
+          <div class="redirect-countdown-fill" id="countdown-fill"></div>
+        </div>
+
+        <p class="redirect-note" id="redirect-timer-text">
+          <i class="fa-solid fa-circle-notch fa-spin"></i> Redirecting to <strong>Bookings Overview</strong> in <span id="countdown-num">3</span>s...
+        </p>
+
+        <div class="success-actions-row">
+          <a href="/bookings?success=${encodeURIComponent('Meeting room booked successfully! Reference: ' + bookingId)}" class="btn btn-primary btn-lg" style="width: 100%; justify-content: center; gap: 0.5rem;">
+            <span>Go to Bookings Now</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </a>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Animate progress bar
+    setTimeout(() => {
+      const fill = document.getElementById('countdown-fill');
+      if (fill) fill.style.width = '0%';
+    }, 50);
+
+    let secondsLeft = 3;
+    const countdownElem = document.getElementById('countdown-num');
+
+    const countdownInterval = setInterval(() => {
+      secondsLeft--;
+      if (countdownElem) countdownElem.textContent = String(secondsLeft);
+      if (secondsLeft <= 0) {
+        clearInterval(countdownInterval);
+        const successUrl = `/bookings?success=${encodeURIComponent('Meeting room booked successfully! Reference: ' + bookingId)}`;
+        window.location.href = successUrl;
+      }
+    }, 1000);
+  }
+
   function bindSlotCardEvents() {
     const freeCards = document.querySelectorAll('.free-slot-card');
     freeCards.forEach(card => {
       card.addEventListener('click', () => {
-        freeCards.forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
-
         const slotId = card.getAttribute('data-slot-id');
         const slotLabel = card.getAttribute('data-slot-label');
-
-        selectedSlot = { id: slotId, label: slotLabel };
-        if (formSlotId) formSlotId.value = slotId;
-
-        if (summarySlotVal) {
-          summarySlotVal.innerHTML = `<i class="fa-solid fa-clock-check"></i> ${slotLabel}`;
-          summarySlotVal.classList.add('active-slot-selected');
-        }
-
-        if (confirmBtn) {
-          confirmBtn.disabled = false;
-          confirmBtn.classList.add('pulse-ready');
-        }
-
-        const titleInput = document.getElementById('booking-meeting-title');
-        if (titleInput && !titleInput.value.trim()) {
-          titleInput.focus();
-        }
+        bookSlotDirectly(card, slotId, slotLabel);
       });
     });
   }
