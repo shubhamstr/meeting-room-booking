@@ -46,6 +46,21 @@ router.get('/zoho-redirect', (req, res) => {
 router.get('/customers', async (req, res) => {
   try {
     const searchQuery = req.query.search || '';
+    const page = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+
+    if (page || limit) {
+      const result = await bookingService.getPaginatedCustomers({
+        search: searchQuery,
+        page: page || 1,
+        limit: limit || 10
+      });
+      return res.json({
+        success: true,
+        ...result
+      });
+    }
+
     const customers = await bookingService.getCustomers(searchQuery);
     res.json({
       success: true,

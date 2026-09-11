@@ -13,11 +13,26 @@ router.get('/', (req, res) => {
 router.get('/customers', async (req, res) => {
   try {
     const searchQuery = req.query.search || '';
-    const customers = await bookingService.getCustomers(searchQuery);
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    const paginationResult = await bookingService.getPaginatedCustomers({
+      search: searchQuery,
+      page,
+      limit
+    });
     const stats = await bookingService.getStats();
 
     res.render('customers', {
-      customers,
+      customers: paginationResult.customers,
+      pagination: {
+        total: paginationResult.total,
+        page: paginationResult.page,
+        pageSize: paginationResult.pageSize,
+        totalPages: paginationResult.totalPages,
+        hasNextPage: paginationResult.hasNextPage,
+        hasPrevPage: paginationResult.hasPrevPage
+      },
       searchQuery,
       stats,
       selectedCustomer: null,
@@ -28,6 +43,7 @@ router.get('/customers', async (req, res) => {
   } catch (err) {
     res.render('customers', {
       customers: [],
+      pagination: { total: 0, page: 1, pageSize: 10, totalPages: 1, hasNextPage: false, hasPrevPage: false },
       searchQuery: '',
       stats: { totalCustomers: 0, totalRooms: 0, activeBookings: 0, todayBookingsCount: 0, totalRevenue: 0 },
       selectedCustomer: null,

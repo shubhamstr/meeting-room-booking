@@ -438,3 +438,28 @@
   level: 'info',
   timestamp: '2026-09-11 14:10:12'
 }
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:14:03'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:14:10'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:14:19'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:15:01'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 14:15:19'
+}

@@ -28,7 +28,7 @@ class BookingService {
 
     if (searchQuery && searchQuery.trim()) {
       const q = `%${searchQuery.trim().toLowerCase()}%`;
-      sql += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.email) LIKE $1 OR LOWER(c.company) LIKE $1`;
+      sql += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.email) LIKE $1`;
       params.push(q);
     }
 
@@ -36,6 +36,63 @@ class BookingService {
 
     const res = await query(sql, params);
     return res.rows;
+  }
+
+  async getPaginatedCustomers({ search = '', page = 1, limit = 10 } = {}) {
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.max(1, parseInt(limit, 10) || 10);
+    const offset = (pageNum - 1) * pageSize;
+
+    let countSql = `SELECT COUNT(*)::int AS total FROM customers c`;
+    const countParams = [];
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      countSql += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.email) LIKE $1`;
+      countParams.push(q);
+    }
+
+    const countRes = await query(countSql, countParams);
+    const total = countRes.rows[0]?.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    let dataSql = `
+      SELECT 
+        c.id,
+        c.zoho_id AS "zohoId",
+        c.name,
+        c.email,
+        c.company,
+        c.created_at AS "createdAt",
+        c.updated_at AS "updatedAt",
+        COUNT(b.id) FILTER (WHERE b.status != 'Cancelled')::int AS "bookingCount"
+      FROM customers c
+      LEFT JOIN bookings b ON c.id = b.customer_id
+    `;
+    const dataParams = [];
+    let paramIdx = 1;
+
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      dataSql += ` WHERE LOWER(c.name) LIKE $${paramIdx} OR LOWER(c.email) LIKE $${paramIdx}`;
+      dataParams.push(q);
+      paramIdx++;
+    }
+
+    dataSql += ` GROUP BY c.id ORDER BY c.created_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++};`;
+    dataParams.push(pageSize, offset);
+
+    const dataRes = await query(dataSql, dataParams);
+
+    return {
+      customers: dataRes.rows,
+      total,
+      page: pageNum,
+      pageSize,
+      totalPages,
+      hasNextPage: pageNum < totalPages,
+      hasPrevPage: pageNum > 1
+    };
   }
 
   async getCustomerById(id) {

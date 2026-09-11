@@ -7,35 +7,17 @@ document.addEventListener('DOMContentLoaded', () => {
   initSyncActions();
 });
 
-// --- 1. Customer Live Search ---
+// --- 1. Customer Live / DB Search Helper ---
 function initCustomerSearch() {
   const searchInput = document.getElementById('customer-search-input');
-  const cards = document.querySelectorAll('.customer-card');
-  const emptyState = document.getElementById('no-customers-found');
+  if (!searchInput) return;
 
-  if (!searchInput || !cards.length) return;
-
-  searchInput.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase().trim();
-    let visibleCount = 0;
-
-    cards.forEach((card) => {
-      const name = card.getAttribute('data-name')?.toLowerCase() || '';
-      const email = card.getAttribute('data-email')?.toLowerCase() || '';
-      const company = card.getAttribute('data-company')?.toLowerCase() || '';
-
-      if (name.includes(query) || email.includes(query) || company.includes(query)) {
-        card.style.display = 'flex';
-        visibleCount++;
-      } else {
-        card.style.display = 'none';
-      }
-    });
-
-    if (emptyState) {
-      emptyState.style.display = visibleCount === 0 ? 'flex' : 'none';
-    }
-  });
+  // Clear button behavior or auto-focus cursor at end of input
+  if (searchInput.value) {
+    searchInput.focus();
+    const len = searchInput.value.length;
+    searchInput.setSelectionRange(len, len);
+  }
 }
 
 // --- 2. Interactive Room & Slot Booking ---
