@@ -424,11 +424,12 @@ class ZohoCrmService {
     try {
       const contacts = await this.fetchRecords('Contacts');
       for (const contact of contacts) {
-        const fullName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || 'Zoho Contact';
-        const email = contact.Email || `${contact.id || Date.now()}@zoho-contact.com`;
-        const company = (contact.Account_Name && contact.Account_Name.name) || contact.Department || 'Zoho CRM Client';
-        const phone = contact.Phone || contact.Mobile || '+1 (555) 019-2831';
-        const department = contact.Department || 'Corporate';
+        const rawName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || 'Zoho Contact';
+        const fullName = typeof rawName === 'object' ? (rawName.name || 'Zoho Contact') : String(rawName);
+        const email = (typeof contact.Email === 'string' && contact.Email) ? contact.Email : `${contact.id || Date.now()}@zoho-contact.com`;
+        const company = (contact.Account_Name && contact.Account_Name.name) || (typeof contact.Department === 'string' ? contact.Department : 'Zoho CRM Client');
+        const phone = (typeof contact.Phone === 'string' ? contact.Phone : '') || (typeof contact.Mobile === 'string' ? contact.Mobile : '') || '+1 (555) 019-2831';
+        const department = typeof contact.Department === 'string' ? contact.Department : 'Corporate';
 
         // Check if customer already exists in local list by email
         const existing = bookingService.customers.find(c => c.email.toLowerCase() === email.toLowerCase());
@@ -453,11 +454,12 @@ class ZohoCrmService {
     try {
       const leads = await this.fetchRecords('Leads');
       for (const lead of leads) {
-        const fullName = lead.Full_Name || `${lead.First_Name || ''} ${lead.Last_Name || ''}`.trim() || 'Zoho Lead';
-        const email = lead.Email || `${lead.id || Date.now()}@zoho-lead.com`;
-        const company = lead.Company || 'Zoho Enterprise';
-        const phone = lead.Phone || lead.Mobile || '+1 (555) 018-9273';
-        const department = lead.Industry || 'Prospect';
+        const rawName = lead.Full_Name || `${lead.First_Name || ''} ${lead.Last_Name || ''}`.trim() || 'Zoho Lead';
+        const fullName = typeof rawName === 'object' ? (rawName.name || 'Zoho Lead') : String(rawName);
+        const email = (typeof lead.Email === 'string' && lead.Email) ? lead.Email : `${lead.id || Date.now()}@zoho-lead.com`;
+        const company = typeof lead.Company === 'object' ? (lead.Company.name || 'Zoho Enterprise') : (lead.Company || 'Zoho Enterprise');
+        const phone = (typeof lead.Phone === 'string' ? lead.Phone : '') || (typeof lead.Mobile === 'string' ? lead.Mobile : '') || '+1 (555) 018-9273';
+        const department = typeof lead.Industry === 'object' ? (lead.Industry.name || lead.Industry.value || 'Prospect') : (lead.Industry || 'Prospect');
 
         const existing = bookingService.customers.find(c => c.email.toLowerCase() === email.toLowerCase());
         if (!existing) {

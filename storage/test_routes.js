@@ -20,8 +20,12 @@ async function runTests() {
   await testEndpoint('Health API', '/api/health');
   await testEndpoint('Zoho Status API', '/api/zoho/status');
   await testEndpoint('Zoho Connect API (JSON)', '/api/zoho/connect', { headers: { 'Accept': 'application/json' } });
+  await testEndpoint('Zoho Sync API (POST)', '/api/zoho/sync', { method: 'POST', headers: { 'Accept': 'application/json' } });
+  await testEndpoint('Zoho Sync API (GET)', '/api/zoho/sync', { headers: { 'Accept': 'application/json' } });
   await testEndpoint('Calendar Status API', '/api/calendar/status');
   await testEndpoint('Calendar Connect API (JSON)', '/api/calendar/connect', { headers: { 'Accept': 'application/json' } });
+  await testEndpoint('Calendar Sync API (POST)', '/api/calendar/sync', { method: 'POST', headers: { 'Accept': 'application/json' } });
+  await testEndpoint('Calendar Sync API (GET)', '/api/calendar/sync', { headers: { 'Accept': 'application/json' } });
   await testEndpoint('Customers API', '/api/customers');
   await testEndpoint('Rooms API', '/api/rooms');
   await testEndpoint('Room 1 Availability API', '/api/rooms/room-1/availability');

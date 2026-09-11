@@ -35,8 +35,15 @@ class BookingService {
   }
 
   addCustomer({ name, email, phone, company, department }) {
-    const initials = name
+    const safeName = String(name || '').trim();
+    const safeEmail = String(email || '').trim();
+    const safePhone = phone ? String(phone).trim() : '+1 (555) 000-0000';
+    const safeCompany = company ? (typeof company === 'object' ? (company.name || company.value || 'Independent Corp') : String(company).trim()) : 'Independent Corp';
+    const safeDept = department ? (typeof department === 'object' ? (department.name || department.value || 'General') : String(department).trim()) : 'General';
+
+    const initials = safeName
       .split(' ')
+      .filter(Boolean)
       .map(n => n[0])
       .join('')
       .toUpperCase()
@@ -47,11 +54,11 @@ class BookingService {
 
     const newCustomer = {
       id: `cust-${Date.now()}`,
-      name: name.trim(),
-      email: email.trim(),
-      phone: phone ? phone.trim() : '+1 (555) 000-0000',
-      company: company ? company.trim() : 'Independent Corp',
-      department: department ? department.trim() : 'General',
+      name: safeName,
+      email: safeEmail,
+      phone: safePhone,
+      company: safeCompany,
+      department: safeDept,
       avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
       initials: initials || 'CU',
       badgeColor: randomColor

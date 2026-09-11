@@ -34,14 +34,17 @@
               Organization: <strong><%= zohoStatus.organization ? zohoStatus.organization.companyName : 'Connected Account' %></strong>
             </div>
             <div class="status-meta">
-              Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; API: <span>/api/zoho</span>
+              Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; API: <span>POST /api/zoho/sync</span>
+              <% if (zohoStatus.lastSyncedAt) { %>
+                <br><small style="color: #6ee7b7;"><i class="fa-solid fa-clock-rotate-left"></i> Last Synced: <%= new Date(zohoStatus.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) %></small>
+              <% } %>
             </div>
           </div>
         </div>
 
         <div class="landing-actions-stacked">
-          <form action="/api/zoho/sync" method="POST" style="margin: 0; width: 100%;">
-            <button type="submit" class="btn btn-primary" style="width: 100%;">
+          <form action="/api/zoho/sync" method="POST" id="zoho-sync-form" style="margin: 0; width: 100%;">
+            <button type="submit" id="zoho-sync-btn" class="btn btn-primary" style="width: 100%;">
               <i class="fa-solid fa-arrows-rotate"></i>
               <span>Sync CRM Contacts</span>
             </button>

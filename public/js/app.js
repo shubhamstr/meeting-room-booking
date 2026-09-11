@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCustomerSearch();
   initRoomAndSlotBooking();
   initModals();
+  initSyncActions();
 });
 
 // --- 1. Customer Live Search ---
@@ -213,3 +214,114 @@ function initModals() {
     });
   });
 }
+
+// --- 4. Interactive AJAX Sync Actions (POST APIs) ---
+function initSyncActions() {
+  const syncForms = document.querySelectorAll('form[action="/api/zoho/sync"], form[action="/api/calendar/sync"]');
+
+  syncForms.forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+
+      const isZoho = form.action.includes('/api/zoho/sync');
+      const originalHtml = btn.innerHTML;
+      const originalDisabled = btn.disabled;
+
+      try {
+        btn.disabled = true;
+        btn.innerHTML = `
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>${isZoho ? 'Syncing Zoho CRM...' : 'Syncing Calendar...'}</span>
+        `;
+        btn.style.opacity = '0.75';
+        btn.style.pointerEvents = 'none';
+
+        const response = await fetch(form.action, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          showNotification(data.message || 'Sync completed successfully!', 'success');
+          // Reload page after a brief delay to show synced records/status updates
+          setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        } else {
+          showNotification(data.error || 'Sync request failed. Please check connection.', 'error');
+          btn.disabled = originalDisabled;
+          btn.innerHTML = originalHtml;
+          btn.style.opacity = '1';
+          btn.style.pointerEvents = 'auto';
+        }
+      } catch (err) {
+        showNotification(`Sync failed: ${err.message}`, 'error');
+        btn.disabled = originalDisabled;
+        btn.innerHTML = originalHtml;
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
+      }
+    });
+  });
+}
+
+// Toast notification helper
+function showNotification(message, type = 'success') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.position = 'fixed';
+    container.style.top = '24px';
+    container.style.right = '24px';
+    container.style.zIndex = '99999';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '10px';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  const isSuccess = type === 'success';
+  toast.style.background = isSuccess ? 'linear-gradient(135deg, #065f46, #047857)' : 'linear-gradient(135deg, #881337, #b91c1c)';
+  toast.style.color = '#ffffff';
+  toast.style.padding = '14px 20px';
+  toast.style.borderRadius = '12px';
+  toast.style.boxShadow = '0 12px 30px rgba(0,0,0,0.4)';
+  toast.style.display = 'flex';
+  toast.style.alignItems = 'center';
+  toast.style.gap = '12px';
+  toast.style.fontSize = '0.95rem';
+  toast.style.fontWeight = '600';
+  toast.style.border = isSuccess ? '1px solid #10b981' : '1px solid #ef4444';
+  toast.style.transition = 'all 0.3s ease';
+  toast.style.transform = 'translateY(-10px)';
+  toast.style.opacity = '0';
+
+  toast.innerHTML = `
+    <i class="fa-solid ${isSuccess ? 'fa-circle-check' : 'fa-triangle-exclamation'}" style="font-size: 1.2rem;"></i>
+    <span>${message}</span>
+  `;
+
+  container.appendChild(toast);
+
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateY(0)';
+    toast.style.opacity = '1';
+  });
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+

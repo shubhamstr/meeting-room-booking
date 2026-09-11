@@ -87,8 +87,8 @@ router.get('/status', (req, res) => {
   });
 });
 
-// 4. Disconnect Google Calendar
-router.post('/disconnect', (req, res) => {
+// 4. Disconnect Google Calendar (POST & GET)
+const handleCalendarDisconnect = (req, res) => {
   try {
     googleCalendarService.disconnect();
 
@@ -103,7 +103,10 @@ router.post('/disconnect', (req, res) => {
     }
     res.redirect('/customers?error=' + encodeURIComponent(err.message));
   }
-});
+};
+
+router.post('/disconnect', handleCalendarDisconnect);
+router.get('/disconnect', handleCalendarDisconnect);
 
 // 5. List Upcoming Google Calendar Events
 router.get('/events', async (req, res) => {
@@ -190,8 +193,8 @@ router.delete('/events/:eventId', async (req, res) => {
   }
 });
 
-// 8. Bulk Sync Local Confirmed Bookings to Google Calendar
-router.post('/sync', async (req, res) => {
+// 8. Bulk Sync Local Confirmed Bookings to Google Calendar (POST & GET)
+const handleCalendarSync = async (req, res) => {
   try {
     if (!googleCalendarService.isConnected()) {
       const msg = 'Please connect Google Calendar first before syncing.';
@@ -236,6 +239,9 @@ router.post('/sync', async (req, res) => {
     }
     res.redirect('/customers?error=' + encodeURIComponent('Calendar Sync Failed: ' + err.message));
   }
-});
+};
+
+router.post('/sync', handleCalendarSync);
+router.get('/sync', handleCalendarSync);
 
 export default router;

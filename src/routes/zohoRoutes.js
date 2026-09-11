@@ -125,8 +125,8 @@ router.post('/token-connect', async (req, res) => {
   }
 });
 
-// 4. Sync Contacts & Leads from Zoho CRM into Customer Directory
-router.post('/sync', async (req, res) => {
+// 4. Sync Contacts & Leads from Zoho CRM into Customer Directory (POST & GET)
+const handleZohoSync = async (req, res) => {
   try {
     if (!zohoCrmService.isConnected()) {
       const msg = 'Please connect to Zoho CRM before syncing contacts.';
@@ -153,10 +153,13 @@ router.post('/sync', async (req, res) => {
     }
     res.redirect('/customers?error=' + encodeURIComponent('Sync Failed: ' + err.message));
   }
-});
+};
 
-// 5. Disconnect Zoho CRM
-router.post('/disconnect', (req, res) => {
+router.post('/sync', handleZohoSync);
+router.get('/sync', handleZohoSync);
+
+// 5. Disconnect Zoho CRM (POST & GET)
+const handleZohoDisconnect = (req, res) => {
   try {
     zohoCrmService.disconnect();
 
@@ -171,7 +174,10 @@ router.post('/disconnect', (req, res) => {
     }
     res.redirect('/customers?error=' + encodeURIComponent(err.message));
   }
-});
+};
+
+router.post('/disconnect', handleZohoDisconnect);
+router.get('/disconnect', handleZohoDisconnect);
 
 // 6. JSON API for Connection Status
 router.get('/status', (req, res) => {
