@@ -1343,7 +1343,8 @@ function initBookingsApiView() {
             throw new Error(json.error || 'Failed to cancel reservation.');
           }
 
-          showNotification(`Booking ${bookingId} cancelled successfully.`, 'success');
+          const calFeedback = json.calendarDeleted ? ' and removed from Google Calendar.' : '.';
+          showNotification(`Booking ${bookingId} cancelled successfully${calFeedback}`, 'success');
           // Refresh list from GET /bookings
           fetchBookings(false);
         } catch (err) {

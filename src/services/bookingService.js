@@ -1,5 +1,7 @@
 import { query } from '../config/db.js';
 import { STATIC_TIME_SLOTS, formatTime12h, findSlot } from '../config/timeSlots.js';
+import { googleCalendarService } from './googleCalendarService.js';
+import { queueService } from './queueService.js';
 
 // Helper to get formatted date string YYYY-MM-DD
 export function getTodayDateString(offsetDays = 0) {
@@ -622,6 +624,69 @@ class BookingService {
   }
 
   async cancelBooking(bookingId) {
+    // 1. Fetch current booking to retrieve associated google_event_id
+    const existing = await query(
+      `SELECT 
+        b.id,
+        b.customer_id AS "customerId",
+        b.room_id AS "roomId",
+        b.date,
+        b.start_time AS "startTime",
+        end_time AS "endTime",
+        b.title,
+        b.status,
+        b.google_event_id AS "googleEventId"
+       FROM bookings b
+       WHERE b.id = $1
+       LIMIT 1;`,
+      [bookingId]
+    );
+
+    if (existing.rows.length === 0) {
+      throw new Error('Booking not found.');
+    }
+
+    const currentBooking = existing.rows[0];
+    let calendarDeleted = false;
+
+    // 2. Remove event from Google Calendar if an event ID is associated
+    if (currentBooking.googleEventId) {
+      if (googleCalendarService.isConnected()) {
+        try {
+          calendarDeleted = await googleCalendarService.deleteCalendarEvent(currentBooking.googleEventId);
+        } catch (err) {
+          console.warn(`[BookingService] Failed to delete Google Calendar event ${currentBooking.googleEventId}:`, err.message);
+        }
+      }
+
+      // If deletion was not successful or calendar was not connected, enqueue deletion for background retry
+      if (!calendarDeleted) {
+        try {
+          await queueService.enqueueCalendarDeleteEvent(bookingId, currentBooking.googleEventId);
+        } catch (qErr) {
+          console.warn('[BookingService] Failed to enqueue calendar delete event:', qErr.message);
+        }
+      }
+    }
+
+    // 3. Mark any PENDING creation queue jobs for this booking as COMPLETED so it won't be created later
+    try {
+      await query(
+        `UPDATE queues 
+         SET status = 'COMPLETED', 
+             error_message = 'Booking was cancelled; calendar event creation cancelled.', 
+             processed_at = CURRENT_TIMESTAMP, 
+             updated_at = CURRENT_TIMESTAMP
+         WHERE type = 'GOOGLE_CALENDAR_EVENT' 
+           AND payload->>'bookingId' = $1 
+           AND status = 'PENDING';`,
+        [bookingId]
+      );
+    } catch (err) {
+      console.warn('[BookingService] Error updating pending queue jobs for cancelled booking:', err.message);
+    }
+
+    // 4. Update booking status to Cancelled in PostgreSQL
     const res = await query(
       `UPDATE bookings 
        SET status = 'Cancelled', updated_at = CURRENT_TIMESTAMP 
@@ -639,11 +704,10 @@ class BookingService {
       [bookingId]
     );
 
-    if (res.rows.length === 0) {
-      throw new Error('Booking not found.');
-    }
-
-    return res.rows[0];
+    return {
+      ...res.rows[0],
+      calendarDeleted
+    };
   }
 
   async getBookings({ search = '', customerId = '', roomId = '', status = '', date = '', startDate = '', endDate = '' } = {}) {

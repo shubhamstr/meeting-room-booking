@@ -77,6 +77,50 @@ class QueueService {
   }
 
   /**
+   * Add a Google Calendar event deletion job to the PostgreSQL queues table (e.g. if calendar disconnected on cancel)
+   */
+  async enqueueCalendarDeleteEvent(bookingId, googleEventId, errorMessage = null) {
+    if (!bookingId || !googleEventId) {
+      return null;
+    }
+
+    const queueId = `Q-CAL-DEL-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const payload = {
+      bookingId,
+      googleEventId
+    };
+
+    try {
+      // Check if there is already a PENDING deletion job for this booking
+      const existing = await query(
+        `SELECT id, attempts FROM queues 
+         WHERE type = 'GOOGLE_CALENDAR_DELETE_EVENT' 
+           AND payload->>'bookingId' = $1 
+           AND status = 'PENDING'
+         LIMIT 1;`,
+        [bookingId]
+      );
+
+      if (existing.rows.length > 0) {
+        return existing.rows[0];
+      }
+
+      const res = await query(
+        `INSERT INTO queues (id, type, payload, status, attempts, max_attempts, error_message, created_at, updated_at)
+         VALUES ($1, 'GOOGLE_CALENDAR_DELETE_EVENT', $2, 'PENDING', 1, 5, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING *;`,
+        [queueId, JSON.stringify(payload), errorMessage || 'Pending calendar event removal upon cancellation']
+      );
+
+      console.log(`[QueueService] Enqueued calendar delete job ${queueId} for booking ${bookingId} (Event: ${googleEventId})`);
+      return res.rows[0];
+    } catch (err) {
+      console.error('[QueueService] Error inserting delete job into queues table:', err.message);
+      return null;
+    }
+  }
+
+  /**
    * Process all pending queues
    */
   async processPendingQueues() {
@@ -185,6 +229,35 @@ class QueueService {
             }
           } catch (err) {
             console.warn(`[QueueWorker] Error processing job ${job.id} for booking ${bookingId}:`, err.message);
+            const newAttempts = (job.attempts || 0) + 1;
+            if (newAttempts >= (job.max_attempts || 5)) {
+              await this.markJobFailed(job.id, `Max retry attempts reached. Last error: ${err.message}`, newAttempts);
+              stats.failed++;
+            } else {
+              await query(
+                `UPDATE queues 
+                 SET attempts = $1, error_message = $2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $3;`,
+                [newAttempts, err.message, job.id]
+              );
+              stats.failed++;
+            }
+          }
+        } else if (job.type === 'GOOGLE_CALENDAR_DELETE_EVENT') {
+          // If Google Calendar is not connected, leave job in PENDING state
+          if (!googleCalendarService.isConnected()) {
+            console.log(`[QueueWorker] Google Calendar is not connected. Delete job ${job.id} (Booking ${payload.bookingId}) remains PENDING.`);
+            stats.skipped++;
+            continue;
+          }
+
+          try {
+            const deleted = await googleCalendarService.deleteCalendarEvent(payload.googleEventId);
+            await this.markJobCompleted(job.id, `Removed event ${payload.googleEventId} from Google Calendar`);
+            console.log(`[QueueWorker] Successfully removed calendar event ${payload.googleEventId} for cancelled booking ${payload.bookingId} (Job: ${job.id})`);
+            stats.succeeded++;
+          } catch (err) {
+            console.warn(`[QueueWorker] Error processing delete job ${job.id} for booking ${payload.bookingId}:`, err.message);
             const newAttempts = (job.attempts || 0) + 1;
             if (newAttempts >= (job.max_attempts || 5)) {
               await this.markJobFailed(job.id, `Max retry attempts reached. Last error: ${err.message}`, newAttempts);

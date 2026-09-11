@@ -294,19 +294,9 @@ router.get('/bookings', async (req, res) => {
 router.post('/bookings/:id/cancel', async (req, res) => {
   try {
     const { id } = req.params;
-    const allBookings = await bookingService.getBookings();
-    const booking = allBookings.find(b => b.id === id);
-
-    if (booking && booking.googleEventId && googleCalendarService.isConnected()) {
-      try {
-        await googleCalendarService.deleteCalendarEvent(booking.googleEventId);
-      } catch (e) {
-        console.warn('Could not delete calendar event:', e.message);
-      }
-    }
-
-    await bookingService.cancelBooking(id);
-    res.redirect(`/bookings?success=Booking+${id}+has+been+cancelled.`);
+    const updated = await bookingService.cancelBooking(id);
+    const calNotice = updated.calendarDeleted ? '+and+event+removed+from+Google+Calendar' : '';
+    res.redirect(`/bookings?success=Booking+${id}+has+been+cancelled${calNotice}.`);
   } catch (err) {
     res.redirect(`/bookings?error=${encodeURIComponent(err.message)}`);
   }

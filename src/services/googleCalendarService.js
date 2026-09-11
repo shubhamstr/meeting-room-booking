@@ -534,17 +534,28 @@ class GoogleCalendarService {
    * Delete or cancel an event from the shared Google Calendar
    */
   async deleteCalendarEvent(eventId, customCalendarId) {
-    if (!this.isConnected() || !eventId) return;
+    if (!this.isConnected() || !eventId) return false;
 
     try {
       const targetCalendarId = customCalendarId || this.getEffectiveCalendarId();
       const accessToken = await this.getValidAccessToken();
-      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`, {
+      const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${accessToken}` }
       });
+
+      // 204 No Content or 200 OK means successfully deleted. 404/410 means already deleted or not found.
+      if (res.status === 204 || res.status === 200 || res.status === 404 || res.status === 410) {
+        console.log(`[GoogleCalendarService] Deleted event ${eventId} from calendar "${targetCalendarId}" (HTTP ${res.status})`);
+        return true;
+      }
+
+      const errText = await res.text().catch(() => '');
+      console.warn(`[GoogleCalendarService] Failed to delete event ${eventId} (HTTP ${res.status}): ${errText}`);
+      return false;
     } catch (err) {
-      console.warn('Failed to delete Google Calendar event:', err.message);
+      console.warn('[GoogleCalendarService] Exception deleting Google Calendar event:', err.message);
+      return false;
     }
   }
 
