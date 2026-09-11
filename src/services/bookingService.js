@@ -1,4 +1,5 @@
 import { query } from '../config/db.js';
+import { STATIC_TIME_SLOTS, formatTime12h, findSlot } from '../config/timeSlots.js';
 
 // Helper to get formatted date string YYYY-MM-DD
 export function getTodayDateString(offsetDays = 0) {
@@ -352,33 +353,25 @@ class BookingService {
     };
   }
 
-  // --- Time Slots & Availability Operations (PostgreSQL) ---
+  // --- Time Slots & Availability Operations (Static In-Memory + DB Availability) ---
 
   async getAllSlots() {
-    const res = await query(`
-      SELECT 
-        id,
-        label,
-        time,
-        period,
-        sort_order AS "sortOrder"
-      FROM time_slots 
-      ORDER BY sort_order ASC;
-    `);
-    return res.rows;
+    // High-performance static time slots (database table removed)
+    return STATIC_TIME_SLOTS;
   }
 
   async getSlotsWithAvailability(roomId, date) {
     const targetDate = date || getTodayDateString(0);
 
-    // Fetch all slots
+    // Get static time slots
     const slots = await this.getAllSlots();
 
     // Fetch active bookings for this room & date from PostgreSQL
     const bookingsRes = await query(
       `SELECT 
         b.id,
-        b.slot_id AS "slotId",
+        b.start_time AS "startTime",
+        b.end_time AS "endTime",
         b.title,
         c.name AS "customerName"
        FROM bookings b
@@ -388,17 +381,24 @@ class BookingService {
     );
 
     const existingBookings = bookingsRes.rows;
-    const bookedSlotMap = new Map(existingBookings.map(b => [b.slotId, b]));
 
     return slots.map(slot => {
-      const isBooked = bookedSlotMap.has(slot.id);
-      const bookingInfo = isBooked ? bookedSlotMap.get(slot.id) : null;
+      // Match by time equality or overlap
+      const bookingInfo = existingBookings.find(b => {
+        if (b.startTime && b.endTime && b.startTime === slot.startTime && b.endTime === slot.endTime) return true;
+        if (b.startTime && b.endTime && b.startTime < slot.endTime && b.endTime > slot.startTime) return true;
+        return false;
+      });
+
+      const isBooked = !!bookingInfo;
 
       return {
         id: slot.id,
         label: slot.label,
         time: slot.time,
         period: slot.period,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
         isAvailable: !isBooked,
         bookedBy: bookingInfo ? bookingInfo.customerName : null,
         bookingTitle: bookingInfo ? bookingInfo.title : null
@@ -419,7 +419,6 @@ class BookingService {
     const notes = params.notes?.trim() || '';
 
     let date = params.date ? String(params.date).trim() : '';
-    let slotId = params.slotId ? String(params.slotId).trim() : '';
 
     if (!roomId) {
       throw new Error('Room ID is required.');
@@ -448,41 +447,63 @@ class BookingService {
 
     const allSlots = await this.getAllSlots();
 
-    // Parse start datetime / string if provided
+    // Determine date and start/end times
+    let parsedStartTime = '';
+    let parsedEndTime = '';
+
+    // 1. Parse start datetime / string if provided
     if (start) {
       const startStr = String(start).trim();
-      // 1. Check for Date in start (e.g., 2026-09-11...)
+      // Extract date if in ISO format (e.g. 2026-09-12T09:00:00 or 2026-09-12 09:00)
       const isoDateMatch = startStr.match(/^(\d{4}-\d{2}-\d{2})/);
       if (isoDateMatch && !date) {
         date = isoDateMatch[1];
       }
 
-      // 2. Check if start directly matches a slotId like "09:00-10:00"
-      const directSlot = allSlots.find(s => s.id === startStr);
+      // Check if start directly matches a slot identifier
+      const directSlot = findSlot(startStr);
       if (directSlot) {
-        slotId = directSlot.id;
+        parsedStartTime = directSlot.startTime;
+        parsedEndTime = directSlot.endTime;
       } else {
-        // 3. Extract hour from start string
-        let hour = null;
+        // Extract hour:minute
         const timeMatch12 = startStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
         const timeMatch24 = startStr.match(/(?:T|\s|^)(\d{1,2}):(\d{2})/);
 
+        let hour = null;
+        let min = '00';
         if (timeMatch12) {
           let h = parseInt(timeMatch12[1], 10);
+          min = timeMatch12[2];
           const period = timeMatch12[3].toUpperCase();
           if (period === 'PM' && h < 12) h += 12;
           if (period === 'AM' && h === 12) h = 0;
           hour = h;
         } else if (timeMatch24) {
           hour = parseInt(timeMatch24[1], 10);
+          min = timeMatch24[2];
         }
 
         if (hour !== null) {
-          const hourPrefix = String(hour).padStart(2, '0') + ':';
-          const matchedSlot = allSlots.find(s => s.id.startsWith(hourPrefix));
-          if (matchedSlot) {
-            slotId = matchedSlot.id;
+          parsedStartTime = `${String(hour).padStart(2, '0')}:${min}`;
+          const matchingSlot = allSlots.find(s => s.startTime.startsWith(String(hour).padStart(2, '0')));
+          if (matchingSlot) {
+            parsedStartTime = matchingSlot.startTime;
+            parsedEndTime = matchingSlot.endTime;
           }
+        }
+      }
+    }
+
+    if (end && !parsedEndTime) {
+      const endStr = String(end).trim();
+      const endSlot = findSlot(endStr);
+      if (endSlot) {
+        parsedEndTime = endSlot.endTime;
+      } else {
+        const match24 = endStr.match(/(?:T|\s|^)(\d{1,2}):(\d{2})/);
+        if (match24) {
+          parsedEndTime = `${String(match24[1]).padStart(2, '0')}:${match24[2]}`;
         }
       }
     }
@@ -491,32 +512,34 @@ class BookingService {
       date = getTodayDateString(0);
     }
 
-    // If slotId is still not determined, pick the first available free slot for this room on the given date
-    if (!slotId) {
+    // If still not determined, pick first available free slot for this room on the given date
+    if (!parsedStartTime || !parsedEndTime) {
       const roomAvailability = await this.getSlotsWithAvailability(roomId, date);
       const freeSlot = roomAvailability.find(s => s.isAvailable);
       if (freeSlot) {
-        slotId = freeSlot.id;
+        parsedStartTime = freeSlot.startTime;
+        parsedEndTime = freeSlot.endTime;
       } else {
         throw new Error(`No available time slots remaining for room "${room.name}" on ${date}.`);
       }
     }
 
-    const slot = allSlots.find(s => s.id === slotId);
-    if (!slot) {
-      throw new Error(`Invalid time slot selected: "${slotId}".`);
-    }
-
-    // Check slot collision in PostgreSQL
+    // Check collision in PostgreSQL by room_id, date, start_time, end_time
     const collisionCheck = await query(
-      `SELECT id FROM bookings 
-       WHERE room_id = $1 AND date = $2 AND slot_id = $3 AND status != 'Cancelled'
+      `SELECT id, start_time, end_time FROM bookings 
+       WHERE room_id = $1 
+         AND date = $2 
+         AND status != 'Cancelled'
+         AND (
+           (start_time = $3 AND end_time = $4)
+           OR (start_time < $4 AND end_time > $3)
+         )
        LIMIT 1;`,
-      [roomId, date, slotId]
+      [roomId, date, parsedStartTime, parsedEndTime]
     );
 
     if (collisionCheck.rows.length > 0) {
-      throw new Error(`Room "${room.name}" is already booked for ${slot.label} on ${date}.`);
+      throw new Error(`Room "${room.name}" is already booked on ${date} (${parsedStartTime} - ${parsedEndTime}).`);
     }
 
     const bookingId = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -525,15 +548,15 @@ class BookingService {
 
     const res = await query(
       `INSERT INTO bookings (
-        id, customer_id, room_id, date, slot_id, slot_label, title, attendees, notes, total_cost, status, google_event_id
+        id, customer_id, room_id, date, start_time, end_time, title, attendees, notes, total_cost, status, google_event_id
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Confirmed', NULL)
       RETURNING 
         id,
         customer_id AS "customerId",
         room_id AS "roomId",
         date,
-        slot_id AS "slotId",
-        slot_label AS "slotLabel",
+        start_time AS "startTime",
+        end_time AS "endTime",
         title,
         attendees,
         notes,
@@ -541,19 +564,25 @@ class BookingService {
         status,
         google_event_id AS "googleEventId",
         created_at AS "createdAt";`,
-      [bookingId, customer.id, room.id, date, slot.id, slot.label, bookingTitle, attendees, notes, totalCost]
+      [bookingId, customer.id, room.id, date, parsedStartTime, parsedEndTime, bookingTitle, attendees, notes, totalCost]
     );
 
     const newBooking = res.rows[0];
 
     return {
       ...newBooking,
-      start: `${date}T${slot.id.split('-')[0]}:00`,
-      end: `${date}T${slot.id.split('-')[1]}:00`,
+      startTime: parsedStartTime,
+      endTime: parsedEndTime,
+      start: `${date}T${parsedStartTime.length === 5 ? parsedStartTime + ':00' : parsedStartTime}`,
+      end: `${date}T${parsedEndTime.length === 5 ? parsedEndTime + ':00' : parsedEndTime}`,
       purpose: bookingTitle,
       customerName: customer.name,
+      customerEmail: customer.email,
       customerCompany: customer.company,
-      roomName: room.name
+      roomName: room.name,
+      roomFloor: room.floor,
+      roomType: room.type,
+      roomCapacity: room.capacity
     };
   }
 
@@ -602,8 +631,8 @@ class BookingService {
         customer_id AS "customerId",
         room_id AS "roomId",
         date,
-        slot_id AS "slotId",
-        slot_label AS "slotLabel",
+        start_time AS "startTime",
+        end_time AS "endTime",
         title,
         status,
         google_event_id AS "googleEventId";`,
@@ -630,8 +659,8 @@ class BookingService {
         r.floor AS "roomFloor",
         r.type AS "roomType",
         b.date,
-        b.slot_id AS "slotId",
-        b.slot_label AS "slotLabel",
+        b.start_time AS "startTime",
+        b.end_time AS "endTime",
         b.title,
         b.attendees,
         b.notes,
@@ -678,7 +707,7 @@ class BookingService {
       idx++;
     }
 
-    sql += ` ORDER BY b.date DESC, b.slot_id ASC;`;
+    sql += ` ORDER BY b.date DESC, b.start_time ASC;`;
 
     const res = await query(sql, params);
     return res.rows;

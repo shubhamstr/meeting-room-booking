@@ -15,7 +15,7 @@ router.get('/connect', (req, res) => {
     const host = req.get('host');
     const protocol = req.protocol;
     const defaultRedirectUri = `${protocol}://${host}/api/calendar/callback`;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || defaultRedirectUri;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || googleCalendarService.redirectUri || defaultRedirectUri;
 
     const authUrl = googleCalendarService.getAuthUrl(redirectUri);
 
@@ -56,7 +56,7 @@ router.get('/callback', async (req, res) => {
     const host = req.get('host');
     const protocol = req.protocol;
     const defaultRedirectUri = `${protocol}://${host}/api/calendar/callback`;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || defaultRedirectUri;
+    const redirectUri = req.query.redirect_uri || process.env.GOOGLE_REDIRECT_URI || googleCalendarService.redirectUri || defaultRedirectUri;
 
     const tokenData = await googleCalendarService.handleOAuthCallback(code, redirectUri);
     const email = tokenData.userEmail ? ` (${tokenData.userEmail})` : '';
@@ -140,11 +140,14 @@ router.post('/events', async (req, res) => {
       });
     }
 
-    const { title, roomName, customerName, customerCompany, date, slotLabel, notes, attendees } = req.body;
-    if (!date || !slotLabel || !roomName) {
+    const { title, roomName, customerName, customerCompany, date, startTime, endTime, slotLabel, notes, attendees } = req.body;
+    const effectiveStartTime = startTime || (slotLabel ? slotLabel.split('-')[0].trim() : '09:00');
+    const effectiveEndTime = endTime || (slotLabel ? slotLabel.split('-')[1]?.trim() : '10:00');
+
+    if (!date || !roomName) {
       return res.status(400).json({
         success: false,
-        error: 'Required fields missing: date, slotLabel, and roomName are required.'
+        error: 'Required fields missing: date and roomName are required.'
       });
     }
 
@@ -155,7 +158,8 @@ router.post('/events', async (req, res) => {
       customerName: customerName || 'Admin User',
       customerCompany: customerCompany || 'Company',
       date,
-      slotLabel,
+      startTime: effectiveStartTime,
+      endTime: effectiveEndTime,
       notes: notes || '',
       attendees: attendees || 2
     };
@@ -193,7 +197,77 @@ router.delete('/events/:eventId', async (req, res) => {
   }
 });
 
-// 8. Bulk Sync Local Confirmed Bookings to Google Calendar (POST & GET)
+// 8. List Accessible Google Calendars (Primary & Shared)
+router.get('/calendars', async (req, res) => {
+  try {
+    if (!googleCalendarService.isConnected()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Google Calendar is not connected.'
+      });
+    }
+
+    const calendars = await googleCalendarService.listCalendars();
+    const activeCalendarId = googleCalendarService.getEffectiveCalendarId();
+
+    res.json({
+      success: true,
+      activeCalendarId,
+      count: calendars.length,
+      data: calendars
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9. Select Target Shared Google Calendar
+router.post('/select-calendar', (req, res) => {
+  try {
+    const { calendarId, calendarName } = req.body;
+    if (!calendarId) {
+      return res.status(400).json({ success: false, error: 'calendarId is required.' });
+    }
+
+    googleCalendarService.setSharedCalendarId(calendarId, calendarName);
+
+    res.json({
+      success: true,
+      message: `Target calendar set to "${calendarName || calendarId}".`,
+      data: googleCalendarService.getConnectionStatus()
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 10. Create New Dedicated Shared Meeting Calendar
+router.post('/create-shared-calendar', async (req, res) => {
+  try {
+    if (!googleCalendarService.isConnected()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Google Calendar is not connected.'
+      });
+    }
+
+    const { summary, description } = req.body;
+    const calendar = await googleCalendarService.createSharedCalendar(
+      summary || 'TurboSpace Shared Meeting Rooms',
+      description || 'Shared company calendar for meeting room bookings'
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `Created and selected shared calendar: "${calendar.summary}"!`,
+      data: calendar
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 11. Bulk Sync Local Confirmed Bookings to Google Calendar (POST & GET)
 const handleCalendarSync = async (req, res) => {
   try {
     if (!googleCalendarService.isConnected()) {

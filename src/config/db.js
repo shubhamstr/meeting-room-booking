@@ -96,25 +96,15 @@ const defaultRooms = [
   }
 ];
 
-// Initial Time Slots for Seeding
-const defaultTimeSlots = [
-  { id: '09:00-10:00', label: '09:00 AM - 10:00 AM', time: '09:00 AM', period: 'Morning', sortOrder: 1 },
-  { id: '10:00-11:00', label: '10:00 AM - 11:00 AM', time: '10:00 AM', period: 'Morning', sortOrder: 2 },
-  { id: '11:00-12:00', label: '11:00 AM - 12:00 PM', time: '11:00 AM', period: 'Morning', sortOrder: 3 },
-  { id: '12:00-13:00', label: '12:00 PM - 01:00 PM', time: '12:00 PM', period: 'Afternoon', sortOrder: 4 },
-  { id: '13:00-14:00', label: '01:00 PM - 02:00 PM', time: '01:00 PM', period: 'Afternoon', sortOrder: 5 },
-  { id: '14:00-15:00', label: '02:00 PM - 03:00 PM', time: '02:00 PM', period: 'Afternoon', sortOrder: 6 },
-  { id: '15:00-16:00', label: '03:00 PM - 04:00 PM', time: '03:00 PM', period: 'Afternoon', sortOrder: 7 },
-  { id: '16:00-17:00', label: '04:00 PM - 05:00 PM', time: '04:00 PM', period: 'Evening', sortOrder: 8 },
-  { id: '17:00-18:00', label: '05:00 PM - 06:00 PM', time: '05:00 PM', period: 'Evening', sortOrder: 9 }
-];
-
 /**
  * Initialize PostgreSQL Database Tables and Constraints
  */
 export async function initDb() {
   try {
     console.log('[PostgreSQL] Initializing database schema & tables...');
+
+    // Drop legacy time_slots table if present
+    await query(`DROP TABLE IF EXISTS time_slots CASCADE;`);
 
     // 1. Customers Table (Synchronized from Zoho CRM or added manually)
     // Migrate existing table if old columns exist
@@ -170,27 +160,41 @@ export async function initDb() {
       );
     `);
 
-    // 3. Time Slots Table (Meeting schedule intervals)
+    // 3. Bookings Table (Customer room reservations with Date, Start Time & End Time)
+    // Migrate existing bookings table to ensure start_time/end_time exist and drop old slot_id/slot_label
     await query(`
-      CREATE TABLE IF NOT EXISTS time_slots (
-        id VARCHAR(50) PRIMARY KEY,
-        label VARCHAR(100) NOT NULL,
-        time VARCHAR(50) NOT NULL,
-        period VARCHAR(50) NOT NULL,
-        sort_order INT DEFAULT 0,
-        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-      );
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bookings') THEN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'start_time') THEN
+            ALTER TABLE bookings ADD COLUMN start_time VARCHAR(50);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'end_time') THEN
+            ALTER TABLE bookings ADD COLUMN end_time VARCHAR(50);
+          END IF;
+          -- Auto-fill start_time and end_time from existing slot_id if present
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'slot_id') THEN
+            UPDATE bookings 
+            SET start_time = SPLIT_PART(slot_id, '-', 1), 
+                end_time = SPLIT_PART(slot_id, '-', 2) 
+            WHERE (start_time IS NULL OR end_time IS NULL) AND slot_id LIKE '%-%';
+            ALTER TABLE bookings DROP COLUMN slot_id;
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'slot_label') THEN
+            ALTER TABLE bookings DROP COLUMN slot_label;
+          END IF;
+        END IF;
+      END $$;
     `);
 
-    // 4. Bookings Table (Customer room reservations)
     await query(`
       CREATE TABLE IF NOT EXISTS bookings (
         id VARCHAR(100) PRIMARY KEY,
         customer_id VARCHAR(100) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
         room_id VARCHAR(100) NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
         date VARCHAR(20) NOT NULL,
-        slot_id VARCHAR(50) NOT NULL,
-        slot_label VARCHAR(100) NOT NULL,
+        start_time VARCHAR(50) NOT NULL,
+        end_time VARCHAR(50) NOT NULL,
         title VARCHAR(255) NOT NULL,
         attendees INT DEFAULT 2,
         notes TEXT,
@@ -204,13 +208,14 @@ export async function initDb() {
 
     // Indexes for fast lookup
     await query(`
-      CREATE INDEX IF NOT EXISTS idx_bookings_lookup ON bookings(room_id, date, slot_id, status);
+      DROP INDEX IF EXISTS idx_bookings_slot;
+      CREATE INDEX IF NOT EXISTS idx_bookings_lookup ON bookings(room_id, date, start_time, end_time, status);
       CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);
       CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
       CREATE INDEX IF NOT EXISTS idx_customers_zoho ON customers(zoho_id);
     `);
 
-    // 5. Queues Table (Job queues for Zoho sync, Calendar sync, webhooks, and background processing)
+    // 4. Queues Table (Job queues for Zoho sync, Calendar sync, webhooks, and background processing)
     await query(`
       CREATE TABLE IF NOT EXISTS queues (
         id VARCHAR(100) PRIMARY KEY,
@@ -244,21 +249,7 @@ export async function initDb() {
       }
     }
 
-    // Seed Time Slots if empty
-    const slotCheck = await query(`SELECT COUNT(*) as count FROM time_slots;`);
-    if (parseInt(slotCheck.rows[0].count, 10) === 0) {
-      console.log('[PostgreSQL] Seeding time slots into database...');
-      for (const s of defaultTimeSlots) {
-        await query(
-          `INSERT INTO time_slots (id, label, time, period, sort_order)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (id) DO NOTHING;`,
-          [s.id, s.label, s.time, s.period, s.sortOrder]
-        );
-      }
-    }
-
-    console.log('[PostgreSQL] Database schema verified and ready.');
+    console.log('[PostgreSQL] Database schema verified and ready (time_slots table removed, static slots active).');
     return true;
   } catch (err) {
     console.error('[PostgreSQL] Initialization failed:', err.message);

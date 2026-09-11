@@ -31,7 +31,29 @@ router.get('/health', async (req, res) => {
 });
 
 // Alias for OAuth callback in case configured as /api/oauth (matching Google client secret JSON)
-router.get('/oauth', (req, res) => {
+router.get('/oauth', async (req, res) => {
+  const { code, error, error_description } = req.query;
+  const host = req.get('host');
+  const protocol = req.protocol;
+  const redirectUri = `${protocol}://${host}/api/oauth`;
+
+  if (error) {
+    return res.redirect('/customers?error=' + encodeURIComponent(`Google Auth Error: ${error} - ${error_description || 'Access denied'}`));
+  }
+
+  if (code) {
+    try {
+      const tokenData = await googleCalendarService.handleOAuthCallback(code, redirectUri);
+      const email = tokenData.userEmail ? ` (${tokenData.userEmail})` : '';
+      return res.redirect('/customers?success=' + encodeURIComponent(`Successfully connected Google Calendar${email}!`));
+    } catch (err) {
+      console.warn('OAuth callback token exchange fallback:', err.message);
+      // Fallback to forwarding if needed
+      const queryStr = new URLSearchParams({ ...req.query, redirect_uri: redirectUri }).toString();
+      return res.redirect(`/api/calendar/callback?${queryStr}`);
+    }
+  }
+
   const queryStr = new URLSearchParams(req.query).toString();
   res.redirect(`/api/calendar/callback?${queryStr}`);
 });
@@ -198,7 +220,6 @@ router.post('/bookings', async (req, res) => {
     const end = req.body.end || req.body.endTime || req.body.end_time || req.body['end time'];
     const purpose = req.body.purpose || req.body.title || req.body.notes || 'Meeting Room Reservation';
     const date = req.body.date;
-    const slotId = req.body.slotId || req.body.slot_id;
     const attendees = req.body.attendees;
     const notes = req.body.notes;
 
@@ -216,7 +237,6 @@ router.post('/bookings', async (req, res) => {
       end,
       purpose,
       date,
-      slotId,
       title: purpose,
       attendees,
       notes
@@ -238,7 +258,7 @@ router.post('/bookings', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: `Meeting room "${newBooking.roomName}" booked successfully for ${newBooking.slotLabel} on ${newBooking.date}!`,
+      message: `Meeting room "${newBooking.roomName}" booked successfully for ${newBooking.startTime} - ${newBooking.endTime} on ${newBooking.date}!`,
       data: newBooking,
       calendarSynced: !!newBooking.googleEventId
     });

@@ -165,7 +165,8 @@
           <% freeSlots.forEach(slot => { %>
             <div 
               class="modern-slot-card free-slot-card" 
-              data-slot-id="<%= slot.id %>" 
+              data-start-time="<%= slot.startTime %>"
+              data-end-time="<%= slot.endTime %>"
               data-slot-label="<%= slot.label %>"
               data-slot-time="<%= slot.time %>"
               data-slot-period="<%= slot.period %>"

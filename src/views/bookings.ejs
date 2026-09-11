@@ -260,7 +260,7 @@
                 </div>
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
                   <i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>
-                  <%= booking.slotLabel %>
+                  <%= (booking.startTime && booking.endTime) ? booking.startTime + ' - ' + booking.endTime : 'Scheduled Time' %>
                 </div>
               </td>
               <td>

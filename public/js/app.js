@@ -831,7 +831,8 @@ function initRoomAvailability() {
     freeSlotsGrid.innerHTML = slots.map(slot => `
       <div 
         class="modern-slot-card free-slot-card fade-in-row" 
-        data-slot-id="${escapeHtml(slot.id)}" 
+        data-start-time="${escapeHtml(slot.startTime)}"
+        data-end-time="${escapeHtml(slot.endTime)}"
         data-slot-label="${escapeHtml(slot.label)}"
         data-slot-time="${escapeHtml(slot.time)}"
         data-slot-period="${escapeHtml(slot.period)}"
@@ -891,7 +892,7 @@ function initRoomAvailability() {
   }
 
   // Directly call API POST /bookings (customer ID, room ID, start, end, purpose) upon selecting slot
-  async function bookSlotDirectly(slotCard, slotId, slotLabel) {
+  async function bookSlotDirectly(slotCard, startTime, endTime) {
     if (isBookingInProgress) return;
     isBookingInProgress = true;
 
@@ -905,9 +906,8 @@ function initRoomAvailability() {
     `;
 
     const currentDate = datePicker.value || getDateString(0);
-    const [startTimeStr, endTimeStr] = (slotLabel || slotId).split('-').map(s => s.trim());
-    const startPayload = `${currentDate} ${startTimeStr}`;
-    const endPayload = `${currentDate} ${endTimeStr || startTimeStr}`;
+    const startPayload = `${currentDate} ${startTime}`;
+    const endPayload = `${currentDate} ${endTime}`;
     const purposePayload = `Meeting - ${customerName || 'Client'}`;
 
     try {
@@ -923,8 +923,7 @@ function initRoomAvailability() {
           start: startPayload,
           end: endPayload,
           purpose: purposePayload,
-          date: currentDate,
-          slotId: slotId
+          date: currentDate
         })
       });
 
@@ -937,7 +936,7 @@ function initRoomAvailability() {
       const booking = json.data || {};
 
       // Show high-visibility popup confirmation and redirect to bookings page
-      showBookingSuccessModal(booking, slotLabel, currentDate);
+      showBookingSuccessModal(booking, startTime, endTime, currentDate);
 
     } catch (err) {
       console.error('Error in direct POST /bookings:', err);
@@ -950,7 +949,7 @@ function initRoomAvailability() {
   }
 
   // Popup Confirmation Modal & Redirect to /bookings
-  function showBookingSuccessModal(booking, slotLabel, currentDate) {
+  function showBookingSuccessModal(booking, startTime, endTime, currentDate) {
     // Remove existing modal if present
     const existingModal = document.getElementById('booking-confirmation-popup');
     if (existingModal) existingModal.remove();
@@ -959,7 +958,7 @@ function initRoomAvailability() {
     const displayRoom = booking.roomName || roomName;
     const displayCust = booking.customerName || customerName;
     const displayDate = booking.date || currentDate;
-    const displaySlot = booking.slotLabel || slotLabel;
+    const displayTime = (booking.startTime && booking.endTime) ? `${booking.startTime} - ${booking.endTime}` : `${startTime} - ${endTime}`;
     const isCalendarSynced = !!booking.googleEventId || !!booking.calendarSynced;
 
     const modal = document.createElement('div');
@@ -985,7 +984,7 @@ function initRoomAvailability() {
           </div>
           <div class="success-detail-row">
             <span class="label"><i class="fa-regular fa-calendar-check"></i> Schedule:</span>
-            <span class="value" style="color: #6ee7b7;">${escapeHtml(displayDate)} &bull; ${escapeHtml(displaySlot)}</span>
+            <span class="value" style="color: #6ee7b7;">${escapeHtml(displayDate)} &bull; ${escapeHtml(displayTime)}</span>
           </div>
           <div class="success-detail-row">
             <span class="label"><i class="fa-solid fa-user-check"></i> Customer:</span>
@@ -1042,9 +1041,9 @@ function initRoomAvailability() {
     const freeCards = document.querySelectorAll('.free-slot-card');
     freeCards.forEach(card => {
       card.addEventListener('click', () => {
-        const slotId = card.getAttribute('data-slot-id');
-        const slotLabel = card.getAttribute('data-slot-label');
-        bookSlotDirectly(card, slotId, slotLabel);
+        const startTime = card.getAttribute('data-start-time');
+        const endTime = card.getAttribute('data-end-time');
+        bookSlotDirectly(card, startTime, endTime);
       });
     });
   }
@@ -1296,7 +1295,7 @@ function initBookingsApiView() {
             </div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
               <i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>
-              ${escapeHtml(booking.slotLabel)}
+              ${escapeHtml((booking.startTime && booking.endTime) ? booking.startTime + ' - ' + booking.endTime : 'Scheduled Time')}
             </div>
           </td>
           <td>

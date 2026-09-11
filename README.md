@@ -53,22 +53,14 @@ Maintains physical meeting room inventory.
 - `amenities` (JSONB)
 - `created_at` / `updated_at` (TIMESTAMPTZ)
 
-### 3. `time_slots` Table
-Predefined scheduling slots.
-- `id` (VARCHAR PRIMARY KEY, e.g. `09:00-10:00`)
-- `label` (VARCHAR NOT NULL)
-- `time` (VARCHAR NOT NULL)
-- `period` (VARCHAR NOT NULL)
-- `sort_order` (INT)
-
-### 4. `bookings` Table
-Persisted reservations linked with foreign keys to customers and rooms.
+### 3. `bookings` Table
+Persisted reservations linked with foreign keys to customers and rooms with explicit date, start time, and end time.
 - `id` (VARCHAR PRIMARY KEY, e.g. `BK-1001`)
 - `customer_id` (VARCHAR REFERENCES customers(id) ON DELETE CASCADE)
 - `room_id` (VARCHAR REFERENCES rooms(id) ON DELETE CASCADE)
-- `date` (VARCHAR NOT NULL)
-- `slot_id` (VARCHAR NOT NULL)
-- `slot_label` (VARCHAR NOT NULL)
+- `date` (VARCHAR NOT NULL, e.g. `2026-09-12`)
+- `start_time` (VARCHAR NOT NULL, e.g. `09:00`)
+- `end_time` (VARCHAR NOT NULL, e.g. `10:00`)
 - `title` (VARCHAR NOT NULL)
 - `attendees` (INT DEFAULT 2)
 - `notes` (TEXT)
@@ -77,7 +69,7 @@ Persisted reservations linked with foreign keys to customers and rooms.
 - `google_event_id` (VARCHAR)
 - `created_at` / `updated_at` (TIMESTAMPTZ)
 
-### 5. `queues` Table
+### 4. `queues` Table
 Asynchronous job tracking for Zoho sync and external webhook tasks.
 - `id` (VARCHAR PRIMARY KEY)
 - `type` (VARCHAR NOT NULL, e.g. `ZOHO_SYNC`, `CALENDAR_SYNC`)
@@ -88,6 +80,8 @@ Asynchronous job tracking for Zoho sync and external webhook tasks.
 - `error_message` (TEXT)
 - `processed_at` (TIMESTAMPTZ)
 - `created_at` / `updated_at` (TIMESTAMPTZ)
+
+*(Note: Time slots are managed statically in-memory via `src/config/timeSlots.js` for ultra-fast slot resolution without table lookups).*
 
 ---
 
@@ -167,7 +161,7 @@ turbosoft/
    ```bash
    npm run dev
    ```
-   *Note: Upon startup, `initDb()` will automatically create tables (`customers`, `rooms`, `time_slots`, `bookings`, `queues`) and verify schema integrity.*
+   *Note: Upon startup, `initDb()` will automatically create tables (`customers`, `rooms`, `bookings`, `queues`) and verify schema integrity.*
 
 ---
 

@@ -174,7 +174,6 @@ const handleBookingPost = async (req, res) => {
     const end = req.body.end || req.body.endTime || req.body.end_time;
     const purpose = req.body.purpose || req.body.title || req.body.notes || 'Meeting Room Reservation';
     const date = req.body.date;
-    const slotId = req.body.slotId || req.body.slot_id;
     const attendees = req.body.attendees;
     const notes = req.body.notes;
 
@@ -192,7 +191,6 @@ const handleBookingPost = async (req, res) => {
       end,
       purpose,
       date,
-      slotId,
       title: purpose,
       attendees,
       notes

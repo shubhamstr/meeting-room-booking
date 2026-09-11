@@ -200,7 +200,77 @@ class GoogleCalendarService {
     return !!(this.tokens && (this.tokens.accessToken || this.tokens.refreshToken));
   }
 
+  /**
+   * Helper to normalize a Calendar ID or extract from Google Calendar sharing URL / base64 cid
+   */
+  normalizeCalendarId(rawId) {
+    if (!rawId || typeof rawId !== 'string') {
+      return '0523b8e99981585d170a757b8d8bd09d1b3055c1715f933b2ac4ca319951f88f@group.calendar.google.com';
+    }
+
+    const trimmed = rawId.trim();
+
+    // Check if full URL containing cid query parameter
+    if (trimmed.includes('cid=')) {
+      try {
+        const urlObj = new URL(trimmed);
+        const cidParam = urlObj.searchParams.get('cid');
+        if (cidParam) {
+          // If base64 encoded
+          if (cidParam.endsWith('=') || /^[A-Za-z0-9+/=]+$/.test(cidParam)) {
+            const decoded = Buffer.from(cidParam, 'base64').toString('utf-8');
+            if (decoded.includes('@')) return decoded.trim();
+          }
+          return cidParam.trim();
+        }
+      } catch (e) {
+        // Fallback regex match
+        const match = trimmed.match(/cid=([^&]+)/);
+        if (match && match[1]) {
+          try {
+            const decoded = Buffer.from(match[1], 'base64').toString('utf-8');
+            if (decoded.includes('@')) return decoded.trim();
+          } catch (err) {
+            return match[1].trim();
+          }
+        }
+      }
+    }
+
+    // Check if raw base64 string
+    if ((trimmed.endsWith('=') || /^[A-Za-z0-9+/=]{40,}$/.test(trimmed)) && !trimmed.includes('@')) {
+      try {
+        const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
+        if (decoded.includes('@')) return decoded.trim();
+      } catch (e) {
+        // use raw
+      }
+    }
+
+    return trimmed;
+  }
+
+  getEffectiveCalendarId() {
+    const raw =
+      process.env.GOOGLE_SHARED_CALENDAR_ID ||
+      process.env.GOOGLE_CALENDAR_ID ||
+      (this.tokens ? this.tokens.selectedCalendarId : null) ||
+      '0523b8e99981585d170a757b8d8bd09d1b3055c1715f933b2ac4ca319951f88f@group.calendar.google.com';
+
+    return this.normalizeCalendarId(raw);
+  }
+
+  setSharedCalendarId(calendarId, calendarName = '') {
+    if (!calendarId) return;
+    const normalized = this.normalizeCalendarId(calendarId);
+    this._saveTokens({
+      selectedCalendarId: normalized,
+      selectedCalendarName: calendarName || normalized
+    });
+  }
+
   getConnectionStatus() {
+    const activeCalId = this.getEffectiveCalendarId();
     return {
       connected: this.isConnected(),
       provider: 'Google Calendar API v3',
@@ -208,7 +278,11 @@ class GoogleCalendarService {
       clientId: this.clientId ? `${this.clientId.substring(0, 16)}...` : null,
       redirectUri: this.redirectUri,
       hasRefreshToken: !!(this.tokens && this.tokens.refreshToken),
-      lastUpdated: this.tokens ? this.tokens.updatedAt : null
+      lastUpdated: this.tokens ? this.tokens.updatedAt : null,
+      targetCalendarId: activeCalId,
+      targetCalendarName: this.tokens?.selectedCalendarName || (activeCalId === 'primary' ? 'Primary Calendar' : 'TurboSpace Shared Meeting Room Calendar'),
+      isSharedCalendar: activeCalId !== 'primary',
+      sharedCalendarUrl: `https://calendar.google.com/calendar/u/0?cid=${Buffer.from(activeCalId).toString('base64')}`
     };
   }
 
@@ -224,58 +298,219 @@ class GoogleCalendarService {
   }
 
   /**
+   * List all accessible Google Calendars (including Primary and Shared / Secondary calendars)
+   */
+  async listCalendars() {
+    if (!this.isConnected()) return [];
+
+    const accessToken = await this.getValidAccessToken();
+    const res = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error?.message || 'Failed to list accessible Google Calendars');
+    }
+
+    const activeCalId = this.getEffectiveCalendarId();
+
+    return (data.items || []).map(cal => ({
+      id: cal.id,
+      summary: cal.summary || cal.id,
+      description: cal.description || '',
+      primary: !!cal.primary,
+      accessRole: cal.accessRole,
+      selected: cal.id === activeCalId,
+      isShared: !cal.primary,
+      backgroundColor: cal.backgroundColor,
+      timeZone: cal.timeZone
+    }));
+  }
+
+  /**
+   * Create a new dedicated shared calendar for meeting rooms in Google Calendar
+   */
+  async createSharedCalendar(summary = 'TurboSpace Shared Meeting Rooms', description = 'Shared calendar for company meeting room bookings and reservations') {
+    if (!this.isConnected()) {
+      throw new Error('Google Calendar is not connected.');
+    }
+
+    const accessToken = await this.getValidAccessToken();
+    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        summary,
+        description,
+        timeZone: process.env.GOOGLE_CALENDAR_TIMEZONE || process.env.TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error?.message || 'Failed to create shared Google Calendar');
+    }
+
+    // Set as currently active shared calendar
+    this.setSharedCalendarId(data.id, data.summary);
+
+    return data;
+  }
+
+  /**
    * Helper to format time slot string into ISO 8601 start and end datetime
    */
-  _parseSlotTimes(dateStr, slotLabel) {
-    // Example slotLabel: "09:00 AM - 10:00 AM" or "02:00 PM - 03:00 PM"
-    const [startTimeStr, endTimeStr] = slotLabel.split('-').map(s => s.trim());
-    
-    const parseTime = (tStr) => {
-      const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      if (!match) return { hours: 9, minutes: 0 };
-      let hours = parseInt(match[1], 10);
-      const minutes = parseInt(match[2], 10);
-      const period = match[3].toUpperCase();
-      if (period === 'PM' && hours < 12) hours += 12;
-      if (period === 'AM' && hours === 12) hours = 0;
-      return { hours, minutes };
+  _parseSlotTimes(dateStr, startTime, endTime, startIso, endIso) {
+    const timezone = process.env.GOOGLE_CALENDAR_TIMEZONE || process.env.TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+
+    // If explicit start and end datetime strings are already provided
+    if (startIso && endIso) {
+      return {
+        start: { dateTime: String(startIso).includes('T') ? startIso : `${startIso}:00`, timeZone: timezone },
+        end: { dateTime: String(endIso).includes('T') ? endIso : `${endIso}:00`, timeZone: timezone }
+      };
+    }
+
+    const safeDate = dateStr || new Date().toISOString().split('T')[0];
+    let startTimeStr = startTime || '';
+    let endTimeStr = endTime || '';
+
+    // If a combined string was passed into startTime (e.g. "09:00 - 10:00")
+    if (startTimeStr.includes('-') && !endTimeStr) {
+      const parts = startTimeStr.split('-').map(s => s ? s.trim() : '');
+      startTimeStr = parts[0];
+      endTimeStr = parts[1] || '';
+    }
+
+    const parseTime = (tStr, defaultHour = 9) => {
+      if (!tStr) return { hours: defaultHour, minutes: 0 };
+
+      // Check 12-hour format e.g. "09:00 AM" or "2:30 PM"
+      const match12 = tStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (match12) {
+        let hours = parseInt(match12[1], 10);
+        const minutes = parseInt(match12[2], 10);
+        const period = match12[3].toUpperCase();
+        if (period === 'PM' && hours < 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        return { hours, minutes };
+      }
+
+      // Check 24-hour format e.g. "14:00" or "09:30"
+      const match24 = tStr.match(/(\d{1,2}):(\d{2})/);
+      if (match24) {
+        return { hours: parseInt(match24[1], 10), minutes: parseInt(match24[2], 10) };
+      }
+
+      return { hours: defaultHour, minutes: 0 };
     };
 
-    const startT = parseTime(startTimeStr);
-    const endT = parseTime(endTimeStr);
+    const startT = parseTime(startTimeStr || '09:00', 9);
+    const endT = parseTime(endTimeStr || '10:00', startT.hours + 1);
 
-    const startDateTime = new Date(`${dateStr}T${String(startT.hours).padStart(2, '0')}:${String(startT.minutes).padStart(2, '0')}:00`);
-    const endDateTime = new Date(`${dateStr}T${String(endT.hours).padStart(2, '0')}:${String(endT.minutes).padStart(2, '0')}:00`);
+    const startDateTime = `${safeDate}T${String(startT.hours).padStart(2, '0')}:${String(startT.minutes).padStart(2, '0')}:00`;
+    const endDateTime = `${safeDate}T${String(endT.hours).padStart(2, '0')}:${String(endT.minutes).padStart(2, '0')}:00`;
 
     return {
-      start: { dateTime: startDateTime.toISOString(), timeZone: 'Asia/Kolkata' },
-      end: { dateTime: endDateTime.toISOString(), timeZone: 'Asia/Kolkata' }
+      start: { dateTime: startDateTime, timeZone: timezone },
+      end: { dateTime: endDateTime, timeZone: timezone }
     };
   }
 
   /**
-   * Create an event in primary Google Calendar for a booking
+   * Create an event in the shared Google Calendar for a booking using Room Name, Time, and Customer Details
    */
-  async createCalendarEvent(booking) {
+  async createCalendarEvent(booking, customCalendarId) {
     if (!this.isConnected()) {
       return null;
     }
 
     const accessToken = await this.getValidAccessToken();
-    const timeRange = this._parseSlotTimes(booking.date, booking.slotLabel);
+    const timeRange = this._parseSlotTimes(booking.date, booking.startTime, booking.endTime, booking.start, booking.end);
+
+    const targetCalendarId = customCalendarId || this.getEffectiveCalendarId();
+    const roomName = booking.roomName || 'Meeting Room';
+    const roomFloor = booking.roomFloor || '';
+    const roomType = booking.roomType || 'Conference Space';
+    const customerName = booking.customerName || 'Valued Client';
+    const customerEmail = booking.customerEmail || '';
+    const customerCompany = booking.customerCompany || 'Independent';
+    const bookingTitle = booking.title || booking.purpose || `Meeting Room Reservation`;
+    const bookingId = booking.id || `BK-${Date.now()}`;
+    const attendeesCount = booking.attendees || 2;
+    const notes = booking.notes || 'None';
+    const totalCost = booking.totalCost !== undefined ? `$${booking.totalCost}` : 'N/A';
+    const timeDisplay = (booking.startTime && booking.endTime) ? `${booking.startTime} - ${booking.endTime}` : (booking.slotLabel || 'Scheduled Time');
+
+    // Build rich formatted event description
+    const descriptionLines = [
+      `========================================`,
+      `🏢 TURBOSPACE MEETING ROOM RESERVATION`,
+      `========================================`,
+      ``,
+      `📍 ROOM DETAILS:`,
+      `• Room Name: ${roomName}`,
+      roomFloor ? `• Location / Floor: ${roomFloor}` : null,
+      `• Room Type: ${roomType}`,
+      booking.roomCapacity ? `• Capacity: ${booking.roomCapacity} Persons` : null,
+      ``,
+      `🕒 SCHEDULE & TIME:`,
+      `• Date: ${booking.date || 'Today'}`,
+      `• Time: ${timeDisplay}`,
+      `• Timezone: ${timeRange.start.timeZone}`,
+      ``,
+      `👤 CUSTOMER DETAILS:`,
+      `• Name: ${customerName}`,
+      customerEmail ? `• Email: ${customerEmail}` : null,
+      `• Company / Organization: ${customerCompany}`,
+      ``,
+      `📋 RESERVATION SUMMARY:`,
+      `• Reference ID: ${bookingId}`,
+      `• Purpose: ${bookingTitle}`,
+      `• Expected Attendees: ${attendeesCount}`,
+      `• Total Fee: ${totalCost}`,
+      `• Special Requests / Notes: ${notes}`,
+      `• Status: Confirmed`,
+      ``,
+      `----------------------------------------`,
+      `Booked via TurboSpace Shared Meeting Management System.`
+    ].filter(line => line !== null).join('\n');
+
+    // Build attendees list
+    const attendees = [];
+    if (customerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())) {
+      attendees.push({
+        email: customerEmail.trim(),
+        displayName: customerName
+      });
+    }
 
     const eventPayload = {
-      summary: `[Room Booking] ${booking.title || 'Meeting'} - ${booking.roomName}`,
-      description: `Meeting Room Reservation\n\nBooking ID: ${booking.id}\nRoom: ${booking.roomName}\nCustomer: ${booking.customerName} (${booking.customerCompany})\nAttendees: ${booking.attendees}\nNotes: ${booking.notes || 'None'}`,
-      location: booking.roomName,
+      summary: `[Room Booking] ${roomName} - ${customerName} (${customerCompany})`,
+      description: descriptionLines,
+      location: roomFloor ? `${roomName}, ${roomFloor}` : roomName,
       start: timeRange.start,
       end: timeRange.end,
-      attendees: [
-        { displayName: booking.customerName }
-      ]
+      attendees: attendees.length > 0 ? attendees : undefined,
+      guestsCanSeeOtherGuests: true,
+      guestsCanInviteOthers: true,
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: 15 },
+          { method: 'email', minutes: 60 }
+        ]
+      },
+      transparency: 'opaque'
     };
 
-    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+    const targetUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events?sendUpdates=all`;
+
+    const res = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -286,21 +521,25 @@ class GoogleCalendarService {
 
     const eventData = await res.json();
     if (!res.ok) {
-      throw new Error(eventData.error?.message || 'Failed to create Google Calendar event');
+      throw new Error(eventData.error?.message || `Failed to create Google Calendar event in calendar "${targetCalendarId}"`);
     }
 
-    return eventData;
+    return {
+      ...eventData,
+      calendarId: targetCalendarId
+    };
   }
 
   /**
-   * Delete or cancel an event from Google Calendar
+   * Delete or cancel an event from the shared Google Calendar
    */
-  async deleteCalendarEvent(eventId) {
+  async deleteCalendarEvent(eventId, customCalendarId) {
     if (!this.isConnected() || !eventId) return;
 
     try {
+      const targetCalendarId = customCalendarId || this.getEffectiveCalendarId();
       const accessToken = await this.getValidAccessToken();
-      await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${accessToken}` }
       });
@@ -310,19 +549,20 @@ class GoogleCalendarService {
   }
 
   /**
-   * List upcoming events from primary Google Calendar
+   * List upcoming events from the target Google Calendar
    */
-  async listCalendarEvents(maxResults = 20) {
+  async listCalendarEvents(maxResults = 20, customCalendarId) {
     if (!this.isConnected()) return [];
 
+    const targetCalendarId = customCalendarId || this.getEffectiveCalendarId();
     const accessToken = await this.getValidAccessToken();
-    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&orderBy=startTime&singleEvents=true&timeMin=${new Date().toISOString()}`, {
+    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(targetCalendarId)}/events?maxResults=${maxResults}&orderBy=startTime&singleEvents=true&timeMin=${new Date().toISOString()}`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error?.message || 'Failed to list Google Calendar events');
+      throw new Error(data.error?.message || `Failed to list events for calendar "${targetCalendarId}"`);
     }
 
     return data.items || [];

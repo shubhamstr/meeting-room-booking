@@ -26,7 +26,8 @@ async function runTests() {
   await testEndpoint('Calendar Connect API (JSON)', '/api/calendar/connect', { headers: { 'Accept': 'application/json' } });
   await testEndpoint('Calendar Sync API (POST)', '/api/calendar/sync', { method: 'POST', headers: { 'Accept': 'application/json' } });
   await testEndpoint('Calendar Sync API (GET)', '/api/calendar/sync', { headers: { 'Accept': 'application/json' } });
-  await testEndpoint('Customers API', '/api/customers');
+  const custsRes = await testEndpoint('Customers API', '/api/customers');
+  const validCustId = custsRes?.data?.data?.[0]?.id || 'cust-1';
   await testEndpoint('Rooms API', '/api/rooms');
   await testEndpoint('Room 1 Availability API', '/api/rooms/room-1/availability');
   await testEndpoint('Slots API', '/api/slots?roomId=room-1');
@@ -35,10 +36,11 @@ async function runTests() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      customerId: 'cust-1',
+      customerId: validCustId,
       roomId: 'room-1',
-      date: '2026-09-12',
-      slotId: '09:00-10:00',
+      date: '2026-09-20',
+      startTime: '09:00',
+      endTime: '10:00',
       title: 'Board Meeting with Enterprise Client',
       attendees: 4
     })
