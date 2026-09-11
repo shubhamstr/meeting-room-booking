@@ -81,14 +81,8 @@
               <i class="fa-solid fa-calendar-day" style="color: var(--primary-400);"></i>
               Schedule &amp; Availability
             </h3>
-            <span class="api-endpoint-pill" title="Live slot availability API">
-              <i class="fa-solid fa-code"></i> GET /api/rooms/<%= room.id %>/availability?date=<span id="api-date-display"><%= date %></span>
-            </span>
-            <span class="api-endpoint-pill" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #6ee7b7;" title="Direct Instant Booking API">
-              <i class="fa-solid fa-bolt"></i> POST /bookings
-            </span>
           </div>
-          <p class="toolbar-subtitle">Select date and click any available time slot below to instantly reserve this meeting space.</p>
+          <p class="toolbar-subtitle">Select date and click any available time slot below to reserve this meeting space.</p>
         </div>
 
         <!-- Slot Counters Breakdown -->
@@ -130,7 +124,7 @@
           <button type="button" class="quick-date-btn" data-offset="2">+2 Days</button>
         </div>
 
-        <button type="button" id="refresh-slots-btn" class="btn btn-secondary btn-sm" title="Re-fetch slot availability from API">
+        <button type="button" id="refresh-slots-btn" class="btn btn-secondary btn-sm" title="Refresh availability">
           <i class="fa-solid fa-arrows-rotate" id="refresh-slots-icon"></i>
           <span>Refresh</span>
         </button>
@@ -142,7 +136,7 @@
       <div class="loading-spinner-wrap">
         <i class="fa-solid fa-circle-notch fa-spin loading-spinner-icon"></i>
       </div>
-      <p class="loading-text">Fetching live slots from <code>GET /api/rooms/<%= room.id %>/availability</code>...</p>
+      <p class="loading-text">Checking available time slots...</p>
     </div>
 
     <!-- SECTION 1: FREE SLOTS (Available for Instant Booking) -->
@@ -152,7 +146,7 @@
           <span class="status-indicator-dot green"></span>
           <h4 class="section-title">Available Slots (<span id="free-slots-header-count"><%= freeSlots.length %></span>)</h4>
         </div>
-        <span class="section-hint"><i class="fa-solid fa-bolt" style="color: #67e8f9;"></i> Click any slot below to instantly call <code>POST /bookings</code> and reserve</span>
+        <span class="section-hint"><i class="fa-solid fa-bolt" style="color: #67e8f9;"></i> Click any available slot to reserve</span>
       </div>
 
       <div class="slots-grid-wrap" id="free-slots-grid">
@@ -196,9 +190,9 @@
       <div class="slots-section-header">
         <div class="section-title-wrap">
           <span class="status-indicator-dot red"></span>
-          <h4 class="section-title">Reserved / Busy Slots (<span id="busy-slots-header-count"><%= busySlots.length %></span>)</h4>
+          <h4 class="section-title">Reserved Slots (<span id="busy-slots-header-count"><%= busySlots.length %></span>)</h4>
         </div>
-        <span class="section-hint">Unavailable time slots already reserved in PostgreSQL</span>
+        <span class="section-hint">Time slots that are already reserved</span>
       </div>
 
       <div class="slots-grid-wrap" id="busy-slots-grid">

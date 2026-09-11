@@ -55,7 +55,7 @@
     </div>
   <% } %>
 
-  <!-- Page Header & Live API Pill -->
+  <!-- Page Header -->
   <div class="rooms-header-section">
     <div class="rooms-title-block">
       <div class="title-with-pill">
@@ -63,9 +63,6 @@
           <i class="fa-solid fa-door-open title-icon"></i>
           Available Meeting Spaces
         </h1>
-        <span class="api-endpoint-pill" id="rooms-api-pill" title="Live data endpoint">
-          <i class="fa-solid fa-code"></i> GET /api/rooms
-        </span>
         <span class="total-count-badge" id="rooms-count-badge">
           <i class="fa-solid fa-circle-notch fa-spin"></i> Loading rooms...
         </span>
@@ -98,7 +95,7 @@
         </select>
       </div>
 
-      <button type="button" id="rooms-refresh-btn" class="btn btn-secondary btn-sm" title="Re-fetch rooms via GET /api/rooms">
+      <button type="button" id="rooms-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh available rooms">
         <i class="fa-solid fa-arrows-rotate" id="rooms-refresh-icon"></i>
         <span>Refresh</span>
       </button>
@@ -110,7 +107,7 @@
     <div class="loading-spinner-wrap">
       <i class="fa-solid fa-circle-notch fa-spin loading-spinner-icon"></i>
     </div>
-    <p class="loading-text">Calling <code>GET /api/rooms</code> API to load meeting rooms...</p>
+    <p class="loading-text">Loading available meeting rooms...</p>
   </div>
 
   <!-- Error State Card -->
@@ -119,16 +116,16 @@
       <i class="fa-solid fa-triangle-exclamation"></i>
     </div>
     <h3 class="empty-title">Error Loading Rooms</h3>
-    <p class="empty-desc error-message-text">Failed to fetch rooms from GET /api/rooms API.</p>
+    <p class="empty-desc error-message-text">Unable to load meeting rooms. Please try again.</p>
     <button type="button" class="btn btn-primary btn-sm" id="rooms-retry-btn">
       <i class="fa-solid fa-rotate-right"></i>
-      <span>Retry API Call</span>
+      <span>Try Again</span>
     </button>
   </div>
 
-  <!-- Fullscreen Room Cards Grid (Populated dynamically via GET /api/rooms API with on-scroll pagination) -->
+  <!-- Fullscreen Room Cards Grid -->
   <div class="fullscreen-rooms-grid" id="rooms-grid-container" data-customer-id="<%= customer ? customer.id : '' %>" style="display: none;">
-    <!-- Dynamically loaded via GET /api/rooms API -->
+    <!-- Dynamically loaded -->
   </div>
 
   <!-- On-Scroll Infinite Loading Spinner Indicator -->
@@ -136,7 +133,7 @@
     <div class="infinite-spinner-ring">
       <i class="fa-solid fa-circle-notch fa-spin"></i>
     </div>
-    <span class="infinite-spinner-text">Loading more meeting spaces via <code>/api/rooms</code>...</span>
+    <span class="infinite-spinner-text">Loading more meeting rooms...</span>
   </div>
 
   <!-- End of List Indicator -->

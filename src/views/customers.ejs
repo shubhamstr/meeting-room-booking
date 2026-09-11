@@ -1,11 +1,11 @@
-<%- include('layout/header', { title: 'Customer Directory & Integrations', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage, infoMessage: infoMessage }) %>
+<%- include('layout/header', { title: 'Zoho CRM Contacts (Customers)', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage, infoMessage: infoMessage }) %>
 
 <div class="landing-container">
   
   <div class="page-intro-header">
-    <h1 class="landing-main-title">Integrations & Customer Hub</h1>
+    <h1 class="landing-main-title">Zoho CRM Contacts (Customers)</h1>
     <p class="landing-subtitle">
-      Connect your CRM & Calendar to automatically synchronize contacts and manage meeting room bookings via PostgreSQL.
+      Connect your CRM and Calendar to synchronize contacts and manage meeting room bookings seamlessly.
     </p>
   </div>
 
@@ -21,7 +21,7 @@
           </div>
           <div>
             <h3 class="compact-card-title">Zoho CRM</h3>
-            <span class="compact-card-type">OAuth 2.0 Contacts Sync</span>
+            <span class="compact-card-type">Contacts Sync</span>
           </div>
         </div>
         <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
@@ -38,12 +38,12 @@
       <div class="compact-card-body">
         <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
           <div class="compact-meta-row">
-            <span class="meta-label"><i class="fa-solid fa-building"></i> Org:</span>
+            <span class="meta-label"><i class="fa-solid fa-building"></i> Account:</span>
             <span class="meta-val"><%= zohoStatus.organization ? zohoStatus.organization.companyName : 'Connected Account' %></span>
           </div>
           <div class="compact-meta-row">
-            <span class="meta-label"><i class="fa-solid fa-server"></i> DC:</span>
-            <span class="meta-val"><%= zohoStatus.dataCenter %> &bull; PostgreSQL DB</span>
+            <span class="meta-label"><i class="fa-solid fa-earth-americas"></i> Region:</span>
+            <span class="meta-val"><%= zohoStatus.dataCenter %> &bull; Active</span>
           </div>
           <% if (zohoStatus.lastSyncedAt) { %>
             <div class="compact-meta-row">
@@ -53,7 +53,7 @@
           <% } %>
         <% } else { %>
           <p class="compact-card-desc">
-            Sync leads and contacts directly into PostgreSQL via Zoho CRM API.
+            Sync contacts and customer profiles directly from your Zoho CRM account.
           </p>
         <% } %>
       </div>
@@ -63,7 +63,7 @@
           <form action="/api/zoho/sync" method="POST" id="zoho-sync-form" style="margin: 0; flex: 1;">
             <button type="submit" id="zoho-sync-btn" class="btn btn-primary btn-sm" style="width: 100%;">
               <i class="fa-solid fa-arrows-rotate"></i>
-              <span>Sync CRM to DB</span>
+              <span>Sync Contacts</span>
             </button>
           </form>
           <form action="/api/zoho/disconnect" method="POST" style="margin: 0;">
@@ -89,7 +89,7 @@
           </div>
           <div>
             <h3 class="compact-card-title">Google Calendar</h3>
-            <span class="compact-card-type">Event Sync &amp; Booking API</span>
+            <span class="compact-card-type">Calendar Events Sync</span>
           </div>
         </div>
         <% if (typeof calendarStatus !== 'undefined' && calendarStatus && calendarStatus.connected) { %>
@@ -106,12 +106,12 @@
       <div class="compact-card-body">
         <% if (typeof calendarStatus !== 'undefined' && calendarStatus && calendarStatus.connected) { %>
           <div class="compact-meta-row">
-            <span class="meta-label"><i class="fa-regular fa-envelope"></i> User:</span>
-            <span class="meta-val" title="<%= calendarStatus.userEmail || '' %>"><%= calendarStatus.userEmail || 'Active Calendar User' %></span>
+            <span class="meta-label"><i class="fa-regular fa-envelope"></i> Account:</span>
+            <span class="meta-val" title="<%= calendarStatus.userEmail || '' %>"><%= calendarStatus.userEmail || 'Active Calendar' %></span>
           </div>
           <div class="compact-meta-row">
-            <span class="meta-label"><i class="fa-solid fa-bolt"></i> API:</span>
-            <span class="meta-val">Google Calendar v3</span>
+            <span class="meta-label"><i class="fa-solid fa-calendar"></i> Service:</span>
+            <span class="meta-val">Google Calendar</span>
           </div>
         <% } else { %>
           <p class="compact-card-desc">
@@ -139,24 +139,21 @@
 
   </div>
 
-  <!-- Synced Customers Directory (PostgreSQL Database Table UI via /api/customers) -->
+  <!-- Synced Customers Directory -->
   <div class="customers-directory-section">
     <div class="directory-header-row">
       <div>
         <div class="directory-title-wrap">
           <h2 class="directory-main-title">
-            <i class="fa-solid fa-database directory-icon"></i>
-            PostgreSQL Customer Directory
+            <i class="fa-solid fa-users directory-icon"></i>
+            Zoho CRM Contacts (Customers)
           </h2>
           <span class="total-count-badge" id="total-customers-badge">
-            <i class="fa-solid fa-circle-notch fa-spin"></i> Loading profiles...
-          </span>
-          <span class="api-endpoint-pill" title="Live data endpoint">
-            <i class="fa-solid fa-code"></i> GET /api/customers
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Loading contacts...
           </span>
         </div>
         <p class="directory-subtitle">
-          Persisted customer records synced from Zoho CRM & database. Real-time querying via <code>/api/customers</code> endpoint.
+          View and manage contacts synced from Zoho CRM to book meeting rooms.
         </p>
       </div>
 
@@ -187,7 +184,7 @@
             </select>
           </div>
 
-          <button type="button" id="api-refresh-btn" class="btn btn-secondary btn-sm refresh-api-btn" title="Fetch fresh data from /api/customers">
+          <button type="button" id="api-refresh-btn" class="btn btn-secondary btn-sm refresh-api-btn" title="Refresh contacts">
             <i class="fa-solid fa-arrows-rotate" id="api-refresh-icon"></i>
             <span>Refresh</span>
           </button>
@@ -200,7 +197,7 @@
       <div class="loading-spinner-wrap">
         <i class="fa-solid fa-circle-notch fa-spin loading-spinner-icon"></i>
       </div>
-      <p class="loading-text">Fetching live data from <code>/api/customers</code>...</p>
+      <p class="loading-text">Loading contacts...</p>
     </div>
 
     <!-- Error State Container -->
@@ -208,11 +205,11 @@
       <div class="empty-icon-circle error-circle">
         <i class="fa-solid fa-triangle-exclamation"></i>
       </div>
-      <h3 class="empty-title">Error Loading Customers</h3>
-      <p class="empty-desc error-message-text">Failed to fetch customer data from /api/customers endpoint.</p>
+      <h3 class="empty-title">Error Loading Contacts</h3>
+      <p class="empty-desc error-message-text">Unable to load customer contacts. Please try again.</p>
       <button type="button" class="btn btn-primary btn-sm" id="api-retry-btn">
         <i class="fa-solid fa-rotate-right"></i>
-        <span>Retry API Call</span>
+        <span>Try Again</span>
       </button>
     </div>
 
@@ -222,7 +219,7 @@
         <table class="modern-customers-table">
           <thead>
             <tr>
-              <th style="min-width: 180px;">Customer</th>
+              <th style="min-width: 180px;">Contact / Customer</th>
               <th style="min-width: 180px;">Email</th>
               <th style="min-width: 140px;">Company</th>
               <th style="min-width: 110px;">Bookings</th>
@@ -230,14 +227,14 @@
             </tr>
           </thead>
           <tbody id="customers-table-body">
-            <!-- Dynamically populated via GET /api/customers endpoint -->
+            <!-- Dynamically populated -->
           </tbody>
         </table>
       </div>
 
       <!-- Table Footer Pagination -->
       <div class="table-pagination-footer" id="customers-pagination-footer" style="display: none;">
-        <!-- Dynamically populated via GET /api/customers endpoint -->
+        <!-- Dynamically populated -->
       </div>
     </div>
 
@@ -247,7 +244,7 @@
         <i class="fa-solid fa-magnifying-glass"></i>
       </div>
       <div class="empty-query-wrap" style="display: none;">
-        <h3 class="empty-title">No Customers Found</h3>
+        <h3 class="empty-title">No Contacts Found</h3>
         <p class="empty-desc">
           No records matched your search query <strong class="empty-query-text"></strong>.
         </p>
@@ -257,9 +254,9 @@
         </button>
       </div>
       <div class="empty-default-wrap" style="display: none;">
-        <h3 class="empty-title">No Customers in PostgreSQL Yet</h3>
+        <h3 class="empty-title">No Contacts Found</h3>
         <p class="empty-desc">
-          Connect your <strong>Zoho CRM</strong> account and sync live contacts directly into your database.
+          Connect your <strong>Zoho CRM</strong> account and sync contacts to get started.
         </p>
         <a href="/api/zoho/connect" class="btn btn-zoho">
           <i class="fa-solid fa-cloud-bolt"></i>

@@ -273,7 +273,7 @@ function initCustomerTableApi() {
 
     paginationFooter.innerHTML = `
       <div class="pagination-info">
-        Showing <strong>${startIdx}</strong> - <strong>${endIdx}</strong> of <strong>${state.total}</strong> customers
+        Showing <strong>${startIdx}</strong> - <strong>${endIdx}</strong> of <strong>${state.total}</strong> contacts
       </div>
 
       <div class="pagination-controls">
@@ -311,7 +311,7 @@ function initCustomerTableApi() {
 
   function updateBadge() {
     if (countBadge) {
-      countBadge.innerHTML = `<i class="fa-solid fa-database"></i> ${state.total} ${state.total === 1 ? 'profile' : 'profiles'}`;
+      countBadge.innerHTML = `<i class="fa-solid fa-users"></i> ${state.total} ${state.total === 1 ? 'contact' : 'contacts'}`;
     }
   }
 
@@ -389,7 +389,7 @@ function initCustomerTableApi() {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       fetchCustomers();
-      showNotification('Refreshing customers from /api/customers...', 'success');
+      showNotification('Refreshing contacts...', 'success');
     });
   }
 
@@ -616,7 +616,7 @@ function initRoomsDirectory() {
   function updateBadge() {
     if (countBadge) {
       const renderedCount = state.renderedRoomIds.size;
-      countBadge.innerHTML = `<i class="fa-solid fa-cubes"></i> Showing ${renderedCount} of ${state.total} ${state.total === 1 ? 'Space' : 'Spaces'}`;
+      countBadge.innerHTML = `<i class="fa-solid fa-door-open"></i> Showing ${renderedCount} of ${state.total} ${state.total === 1 ? 'Space' : 'Spaces'}`;
     }
   }
 
@@ -703,7 +703,7 @@ function initRoomsDirectory() {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
       fetchRooms(false);
-      showNotification('Refreshing meeting rooms from GET /api/rooms API...', 'success');
+      showNotification('Refreshing meeting rooms...', 'success');
     });
   }
 
@@ -988,11 +988,11 @@ function initRoomAvailability() {
         </div>
 
         <h2 class="success-title">Booking Confirmed!</h2>
-        <p class="success-subtitle">Meeting room successfully reserved &amp; saved to PostgreSQL.</p>
+        <p class="success-subtitle">Your meeting room has been successfully reserved.</p>
 
         <div class="success-details-card">
           <div class="success-detail-row">
-            <span class="label"><i class="fa-solid fa-ticket"></i> Reference ID:</span>
+            <span class="label"><i class="fa-solid fa-ticket"></i> Booking ID:</span>
             <span class="value" style="color: var(--primary-400); font-family: monospace;">${escapeHtml(bookingId)}</span>
           </div>
           <div class="success-detail-row">
@@ -1087,7 +1087,7 @@ function initRoomAvailability() {
   if (refreshSlotsBtn) {
     refreshSlotsBtn.addEventListener('click', () => {
       fetchAvailability(datePicker.value);
-      showNotification('Refreshed slot availability', 'success');
+      showNotification('Availability updated', 'success');
     });
   }
 
@@ -1138,7 +1138,7 @@ function initSyncActions() {
       const btn = zohoSyncForm.querySelector('button[type="submit"]');
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Syncing Zoho CRM...</span>`;
+        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Syncing Contacts...</span>`;
       }
     });
   }
@@ -1412,7 +1412,7 @@ function initBookingsApiView() {
       window.history.replaceState({}, '', currentUrl.toString());
 
       if (showToast) {
-        showNotification(`Fetched ${bookings.length} meeting bookings.`, 'success');
+        showNotification(`Loaded ${bookings.length} bookings.`, 'success');
       }
     } catch (err) {
       console.error('Error in fetchBookings:', err);

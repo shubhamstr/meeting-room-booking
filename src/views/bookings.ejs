@@ -69,7 +69,7 @@
   </div>
 </div>
 
-<!-- Search & Filter Panel (Calls GET /api/bookings API) -->
+<!-- Search & Filter Panel -->
 <div class="bookings-filter-panel" id="bookings-filter-panel">
   <!-- Primary Filter Row: Search, Room, Customer, Status, Actions -->
   <div class="bookings-filter-row">
@@ -79,7 +79,7 @@
         type="text" 
         id="booking-search-input" 
         class="search-input" 
-        placeholder="Search meeting, customer, room, or ref ID..." 
+        placeholder="Search meeting, customer, room, or booking ID..." 
         value="<%= filters.search || '' %>"
         autocomplete="off"
       >
@@ -107,8 +107,8 @@
       </select>
 
       <!-- Customer Filter -->
-      <select id="booking-customer-filter" class="select-control" title="Filter by Customer">
-        <option value="">All Customers</option>
+      <select id="booking-customer-filter" class="select-control" title="Filter by Customer / Contact">
+        <option value="">All Customers (Contacts)</option>
         <% if (typeof customers !== 'undefined' && customers) { %>
           <% customers.forEach(cust => { %>
             <option value="<%= cust.id %>" <%= filters.customerId === cust.id ? 'selected' : '' %>>
@@ -125,8 +125,8 @@
         <option value="Cancelled" <%= filters.status === 'Cancelled' ? 'selected' : '' %>>Cancelled</option>
       </select>
 
-      <!-- Refresh API Button -->
-      <button type="button" id="booking-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh Live Bookings">
+      <!-- Refresh Button -->
+      <button type="button" id="booking-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh bookings">
         <i class="fa-solid fa-arrows-rotate" id="booking-refresh-icon"></i>
         <span>Refresh</span>
       </button>
@@ -185,8 +185,8 @@
     <div style="display: inline-flex; align-items: center; justify-content: center; width: 50px; height: 50px; border-radius: 50%; background: rgba(99, 102, 241, 0.15); color: var(--primary-400); font-size: 1.4rem; margin-bottom: 1rem;">
       <i class="fa-solid fa-circle-notch fa-spin"></i>
     </div>
-    <p style="color: #fff; font-weight: 600; margin-bottom: 0.25rem;">Fetching Bookings Data...</p>
-    <p style="color: var(--text-muted); font-size: 0.85rem;">Applying live filters via GET /api/bookings</p>
+    <p style="color: #fff; font-weight: 600; margin-bottom: 0.25rem;">Loading Bookings...</p>
+    <p style="color: var(--text-muted); font-size: 0.85rem;">Retrieving reservation records</p>
   </div>
 
   <!-- Bookings Data Table -->
@@ -194,9 +194,9 @@
     <table class="bookings-table" id="bookings-table">
       <thead>
         <tr>
-          <th>Ref ID</th>
+          <th>Booking ID</th>
           <th>Meeting Title &amp; Details</th>
-          <th>Customer Profile</th>
+          <th>Customer / Contact</th>
           <th>Room &amp; Space</th>
           <th>Date &amp; Time Slot</th>
           <th>Total Cost</th>

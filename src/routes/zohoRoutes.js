@@ -80,7 +80,7 @@ router.get('/callback', async (req, res) => {
       });
     }
 
-    res.redirect('/customers?success=' + encodeURIComponent(`Successfully connected to ${orgName} via @zohocrm/nodejs-sdk-2.0!`));
+    res.redirect('/customers?success=' + encodeURIComponent(`Successfully connected to Zoho CRM (${orgName})!`));
   } catch (err) {
     if (wantsJson(req)) {
       return res.status(500).json({ success: false, error: err.message });
@@ -113,10 +113,10 @@ router.post('/token-connect', async (req, res) => {
     });
 
     if (wantsJson(req)) {
-      return res.json({ success: true, message: 'Zoho CRM connected successfully via Developer Token!' });
+      return res.json({ success: true, message: 'Zoho CRM connected successfully!' });
     }
 
-    res.redirect('/customers?success=' + encodeURIComponent('Zoho CRM connected successfully via Developer Token!'));
+    res.redirect('/customers?success=' + encodeURIComponent('Zoho CRM connected successfully!'));
   } catch (err) {
     if (wantsJson(req)) {
       return res.status(500).json({ success: false, error: err.message });
@@ -138,14 +138,14 @@ const handleZohoSync = async (req, res) => {
 
     const result = await zohoCrmService.syncCrmContactsToBookingService(bookingService);
 
-    // If rate limited, show DB customers only
+    // If rate limited, show existing customers
     if (result.rateLimited) {
-      const rateLimitMsg = result.message || 'Zoho CRM API rate limit (429) reached. Showing customers from database only.';
+      const rateLimitMsg = result.message || 'Zoho CRM rate limit reached. Showing existing contacts.';
       if (wantsJson(req)) {
         return res.json({
           success: true,
           rateLimited: true,
-          source: 'PostgreSQL (Database)',
+          source: 'Contacts Directory',
           message: rateLimitMsg,
           data: result
         });
@@ -155,11 +155,11 @@ const handleZohoSync = async (req, res) => {
 
     let feedbackMsg = '';
     if (result.matchesDb) {
-      feedbackMsg = `CRM records already match PostgreSQL database exactly (${result.unchangedCount || result.totalCustomers} profiles compared & verified). No re-sync required.`;
+      feedbackMsg = `Contacts are already up to date (${result.unchangedCount || result.totalCustomers} verified).`;
     } else if (result.syncedCount > 0 || result.updatedCount > 0) {
-      feedbackMsg = `Sync complete: ${result.syncedCount || 0} new added, ${result.updatedCount || 0} modified updated, ${result.unchangedCount || 0} matched DB. Total: ${result.totalCustomers}`;
+      feedbackMsg = `Sync complete: ${result.syncedCount || 0} new contacts added, ${result.updatedCount || 0} updated. Total: ${result.totalCustomers} contacts.`;
     } else {
-      feedbackMsg = `Zoho CRM sync completed. Total customers in PostgreSQL: ${result.totalCustomers}`;
+      feedbackMsg = `Zoho CRM sync completed. Total contacts: ${result.totalCustomers}.`;
     }
 
     if (wantsJson(req)) {
@@ -173,13 +173,13 @@ const handleZohoSync = async (req, res) => {
     res.redirect('/customers?success=' + encodeURIComponent(feedbackMsg));
   } catch (err) {
     if (zohoCrmService.isRateLimitError(err)) {
-      const rateLimitMsg = 'Zoho CRM API rate limit (429) reached. Showing customers from database only.';
+      const rateLimitMsg = 'Zoho CRM rate limit reached. Showing existing contacts.';
       const dbCustomers = await bookingService.getCustomers();
       if (wantsJson(req)) {
         return res.json({
           success: true,
           rateLimited: true,
-          source: 'PostgreSQL (Database)',
+          source: 'Contacts Directory',
           message: rateLimitMsg,
           count: dbCustomers.length,
           data: dbCustomers
