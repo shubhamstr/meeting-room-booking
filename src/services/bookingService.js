@@ -617,7 +617,7 @@ class BookingService {
     return res.rows[0];
   }
 
-  async getBookings({ search = '', customerId = '', roomId = '', status = '', date = '' } = {}) {
+  async getBookings({ search = '', customerId = '', roomId = '', status = '', date = '', startDate = '', endDate = '' } = {}) {
     let sql = `
       SELECT 
         b.id,
@@ -628,6 +628,7 @@ class BookingService {
         b.room_id AS "roomId",
         r.name AS "roomName",
         r.floor AS "roomFloor",
+        r.type AS "roomType",
         b.date,
         b.slot_id AS "slotId",
         b.slot_label AS "slotLabel",
@@ -646,25 +647,33 @@ class BookingService {
     const params = [];
     let idx = 1;
 
-    if (customerId) {
+    if (customerId && customerId.trim()) {
       sql += ` AND b.customer_id = $${idx++}`;
-      params.push(customerId);
+      params.push(customerId.trim());
     }
-    if (roomId) {
+    if (roomId && roomId.trim()) {
       sql += ` AND b.room_id = $${idx++}`;
-      params.push(roomId);
+      params.push(roomId.trim());
     }
-    if (status) {
+    if (status && status.trim()) {
       sql += ` AND LOWER(b.status) = LOWER($${idx++})`;
-      params.push(status);
+      params.push(status.trim());
     }
-    if (date) {
+    if (startDate && startDate.trim()) {
+      sql += ` AND b.date >= $${idx++}`;
+      params.push(startDate.trim());
+    }
+    if (endDate && endDate.trim()) {
+      sql += ` AND b.date <= $${idx++}`;
+      params.push(endDate.trim());
+    }
+    if (date && date.trim() && !startDate && !endDate) {
       sql += ` AND b.date = $${idx++}`;
-      params.push(date);
+      params.push(date.trim());
     }
     if (search && search.trim()) {
       const q = `%${search.trim().toLowerCase()}%`;
-      sql += ` AND (LOWER(b.title) LIKE $${idx} OR LOWER(c.name) LIKE $${idx} OR LOWER(r.name) LIKE $${idx} OR LOWER(b.id) LIKE $${idx})`;
+      sql += ` AND (LOWER(b.title) LIKE $${idx} OR LOWER(c.name) LIKE $${idx} OR LOWER(c.company) LIKE $${idx} OR LOWER(r.name) LIKE $${idx} OR LOWER(b.id) LIKE $${idx})`;
       params.push(q);
       idx++;
     }

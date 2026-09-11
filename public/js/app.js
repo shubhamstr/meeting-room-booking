@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCustomerTableApi();
   initRoomsDirectory();
   initRoomAvailability();
+  initBookingsApiView();
   initModals();
   initSyncActions();
 });
@@ -1126,3 +1127,436 @@ function initSyncActions() {
     });
   }
 }
+
+// --- 6. Live Bookings API View Controller (GET /bookings) ---
+function initBookingsApiView() {
+  const tableBody = document.getElementById('bookings-table-body');
+  const filterPanel = document.getElementById('bookings-filter-panel');
+  if (!tableBody || !filterPanel) return; // Not on bookings view
+
+  // DOM Elements
+  const searchInput = document.getElementById('booking-search-input');
+  const searchClearBtn = document.getElementById('booking-search-clear');
+  const roomSelect = document.getElementById('booking-room-filter');
+  const customerSelect = document.getElementById('booking-customer-filter');
+  const statusSelect = document.getElementById('booking-status-filter');
+  const startDateInput = document.getElementById('booking-start-date');
+  const endDateInput = document.getElementById('booking-end-date');
+  const presetBtns = document.querySelectorAll('.date-preset-btn');
+  const refreshBtn = document.getElementById('booking-refresh-btn');
+  const refreshIcon = document.getElementById('booking-refresh-icon');
+  const clearFiltersBtn = document.getElementById('booking-clear-filters-btn');
+  const emptyResetBtn = document.getElementById('empty-reset-filters-btn');
+  const loadingState = document.getElementById('bookings-loading-state');
+  const tableWrap = document.getElementById('bookings-table-wrap');
+  const emptyState = document.getElementById('bookings-empty-state');
+  const renderedCount = document.getElementById('bookings-rendered-count');
+
+  // KPI elements
+  const kpiTotal = document.getElementById('kpi-total-bookings');
+  const kpiConfirmed = document.getElementById('kpi-confirmed-bookings');
+  const kpiCancelled = document.getElementById('kpi-cancelled-bookings');
+  const kpiRevenue = document.getElementById('kpi-total-revenue');
+
+  // Parse initial query params from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const state = {
+    search: urlParams.get('search') || (searchInput ? searchInput.value : ''),
+    roomId: urlParams.get('roomId') || (roomSelect ? roomSelect.value : ''),
+    customerId: urlParams.get('customerId') || (customerSelect ? customerSelect.value : ''),
+    status: urlParams.get('status') || (statusSelect ? statusSelect.value : ''),
+    startDate: urlParams.get('startDate') || (startDateInput ? startDateInput.value : ''),
+    endDate: urlParams.get('endDate') || (endDateInput ? endDateInput.value : '')
+  };
+
+  // Sync inputs with initial state
+  if (searchInput && state.search) searchInput.value = state.search;
+  if (roomSelect && state.roomId) roomSelect.value = state.roomId;
+  if (customerSelect && state.customerId) customerSelect.value = state.customerId;
+  if (statusSelect && state.status) statusSelect.value = state.status;
+  if (startDateInput && state.startDate) startDateInput.value = state.startDate;
+  if (endDateInput && state.endDate) endDateInput.value = state.endDate;
+
+  function updateSearchClearVisibility() {
+    if (searchClearBtn && searchInput) {
+      searchClearBtn.style.display = searchInput.value ? 'inline-flex' : 'none';
+    }
+  }
+
+  // Format Helper for YYYY-MM-DD
+  function formatDate(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Escape HTML helper
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  // Update KPI counters dynamically
+  function updateKPIs(bookings) {
+    const total = bookings.length;
+    const confirmed = bookings.filter(b => b.status === 'Confirmed');
+    const cancelled = bookings.filter(b => b.status === 'Cancelled');
+    const revenue = confirmed.reduce((acc, b) => acc + (parseFloat(b.totalCost) || 0), 0);
+
+    if (kpiTotal) kpiTotal.textContent = String(total);
+    if (kpiConfirmed) kpiConfirmed.textContent = String(confirmed.length);
+    if (kpiCancelled) kpiCancelled.textContent = String(cancelled.length);
+    if (kpiRevenue) kpiRevenue.textContent = `$${revenue.toLocaleString()}`;
+    if (renderedCount) renderedCount.textContent = String(total);
+  }
+
+  // Render bookings in table
+  function renderBookingsTable(bookings) {
+    if (!tableBody) return;
+
+    if (!bookings || bookings.length === 0) {
+      tableBody.innerHTML = '';
+      if (emptyState) emptyState.style.display = 'flex';
+      if (tableWrap) tableWrap.style.display = 'none';
+      return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+    if (tableWrap) {
+      tableWrap.style.display = 'block';
+      tableWrap.style.opacity = '1';
+    }
+
+    tableBody.innerHTML = bookings.map(booking => {
+      const isConfirmed = booking.status === 'Confirmed';
+      const attendees = booking.attendees || 2;
+      const notesHtml = booking.notes 
+        ? `<span>&bull;</span><span title="${escapeHtml(booking.notes)}" style="color: var(--text-muted);"><i class="fa-solid fa-note-sticky"></i> Note</span>`
+        : '';
+      const emailHtml = booking.customerEmail 
+        ? `<div style="font-size: 0.74rem; color: var(--text-dim);">${escapeHtml(booking.customerEmail)}</div>`
+        : '';
+      const roomSubtitle = `${escapeHtml(booking.roomFloor || '')} ${booking.roomType ? '(' + escapeHtml(booking.roomType) + ')' : ''}`;
+      const calBadge = booking.googleEventId 
+        ? `<div><span class="cal-synced-badge" title="Synced to Google Calendar"><i class="fa-brands fa-google"></i> Synced</span></div>`
+        : '';
+
+      const statusBadgeHtml = isConfirmed
+        ? `<span class="status-badge confirmed" id="status-badge-${booking.id}"><i class="fa-solid fa-circle-check"></i> Confirmed</span>`
+        : `<span class="status-badge cancelled" id="status-badge-${booking.id}"><i class="fa-solid fa-ban"></i> Cancelled</span>`;
+
+      const actionHtml = isConfirmed
+        ? `<button type="button" class="btn-danger-outline cancel-booking-btn" data-booking-id="${booking.id}" data-customer-name="${escapeHtml(booking.customerName)}" title="Cancel Booking"><i class="fa-solid fa-xmark"></i> Cancel</button>`
+        : `<span style="font-size: 0.8rem; color: var(--text-dim); font-style: italic;">Cancelled</span>`;
+
+      return `
+        <tr id="booking-row-${booking.id}">
+          <td>
+            <span class="booking-ref-badge">
+              ${escapeHtml(booking.id)}
+            </span>
+            ${calBadge}
+          </td>
+          <td>
+            <div style="font-weight: 700; color: #fff; margin-bottom: 0.15rem;">
+              ${escapeHtml(booking.title)}
+            </div>
+            <div style="font-size: 0.78rem; color: var(--text-dim); display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+              <span><i class="fa-solid fa-users" style="margin-right: 0.25rem;"></i> ${attendees} Attendees</span>
+              ${notesHtml}
+            </div>
+          </td>
+          <td>
+            <div style="font-weight: 600; color: #fff;">
+              ${escapeHtml(booking.customerName)}
+            </div>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">
+              ${escapeHtml(booking.customerCompany)}
+            </div>
+            ${emailHtml}
+          </td>
+          <td>
+            <div style="font-weight: 600; color: var(--accent-cyan);">
+              ${escapeHtml(booking.roomName)}
+            </div>
+            <div style="font-size: 0.78rem; color: var(--text-dim);">
+              ${roomSubtitle}
+            </div>
+          </td>
+          <td>
+            <div style="font-weight: 600; color: #fff;">
+              <i class="fa-regular fa-calendar" style="color: var(--primary-400); margin-right: 0.3rem;"></i>
+              ${escapeHtml(booking.date)}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
+              <i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>
+              ${escapeHtml(booking.slotLabel)}
+            </div>
+          </td>
+          <td>
+            <span style="font-weight: 700; color: var(--accent-emerald); font-size: 0.95rem;">
+              $${booking.totalCost}
+            </span>
+          </td>
+          <td>
+            ${statusBadgeHtml}
+          </td>
+          <td style="text-align: right;">
+            ${actionHtml}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Attach cancel button listeners
+    bindCancelButtons();
+  }
+
+  // Cancel Booking Action via API
+  function bindCancelButtons() {
+    const cancelBtns = document.querySelectorAll('.cancel-booking-btn');
+    cancelBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const bookingId = btn.getAttribute('data-booking-id');
+        const custName = btn.getAttribute('data-customer-name') || 'this customer';
+
+        if (!confirm(`Are you sure you want to cancel booking ${bookingId} for ${custName}?`)) {
+          return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Cancelling...`;
+
+        try {
+          const res = await fetch(`/api/bookings/${bookingId}/cancel`, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' }
+          });
+
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            throw new Error(json.error || 'Failed to cancel reservation.');
+          }
+
+          showNotification(`Booking ${bookingId} cancelled successfully.`, 'success');
+          // Refresh list from GET /bookings
+          fetchBookings(false);
+        } catch (err) {
+          showNotification(err.message, 'error');
+          btn.disabled = false;
+          btn.innerHTML = `<i class="fa-solid fa-xmark"></i> Cancel`;
+        }
+      });
+    });
+  }
+
+  // Fetch Bookings via GET /api/bookings API
+  async function fetchBookings(showToast = false) {
+    if (loadingState) loadingState.style.display = 'block';
+    if (tableWrap) tableWrap.style.opacity = '0.4';
+    if (refreshIcon) refreshIcon.classList.add('fa-spin');
+
+    const params = new URLSearchParams();
+    if (state.search.trim()) params.append('search', state.search.trim());
+    if (state.roomId) params.append('roomId', state.roomId);
+    if (state.customerId) params.append('customerId', state.customerId);
+    if (state.status) params.append('status', state.status);
+    if (state.startDate) params.append('startDate', state.startDate);
+    if (state.endDate) params.append('endDate', state.endDate);
+
+    try {
+      const endpoint = `/api/bookings?${params.toString()}`;
+      const res = await fetch(endpoint, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || 'Failed to load bookings.');
+      }
+
+      const bookings = json.data || [];
+      renderBookingsTable(bookings);
+      updateKPIs(bookings);
+
+      // Update URL query string without reloading page
+      const currentUrl = new URL(window.location);
+      currentUrl.search = params.toString();
+      window.history.replaceState({}, '', currentUrl.toString());
+
+      if (showToast) {
+        showNotification(`Fetched ${bookings.length} meeting bookings.`, 'success');
+      }
+    } catch (err) {
+      console.error('Error in fetchBookings:', err);
+      showNotification(`Error: ${err.message}`, 'error');
+    } finally {
+      if (loadingState) loadingState.style.display = 'none';
+      if (tableWrap) tableWrap.style.opacity = '1';
+      if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+    }
+  }
+
+  // Debounced search
+  let searchDebounceTimer = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      state.search = e.target.value;
+      updateSearchClearVisibility();
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        fetchBookings(false);
+      }, 300);
+    });
+  }
+
+  if (searchClearBtn && searchInput) {
+    searchClearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      state.search = '';
+      updateSearchClearVisibility();
+      fetchBookings(false);
+    });
+  }
+
+  // Dropdown filter change listeners
+  if (roomSelect) {
+    roomSelect.addEventListener('change', (e) => {
+      state.roomId = e.target.value;
+      fetchBookings(false);
+    });
+  }
+
+  if (customerSelect) {
+    customerSelect.addEventListener('change', (e) => {
+      state.customerId = e.target.value;
+      fetchBookings(false);
+    });
+  }
+
+  if (statusSelect) {
+    statusSelect.addEventListener('change', (e) => {
+      state.status = e.target.value;
+      fetchBookings(false);
+    });
+  }
+
+  // Date Range inputs change listeners
+  if (startDateInput) {
+    startDateInput.addEventListener('change', (e) => {
+      state.startDate = e.target.value;
+      presetBtns.forEach(b => b.classList.remove('active'));
+      fetchBookings(false);
+    });
+  }
+
+  if (endDateInput) {
+    endDateInput.addEventListener('change', (e) => {
+      state.endDate = e.target.value;
+      presetBtns.forEach(b => b.classList.remove('active'));
+      fetchBookings(false);
+    });
+  }
+
+  // Preset Date shortcuts
+  presetBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      presetBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const range = btn.getAttribute('data-range');
+      const now = new Date();
+
+      if (range === 'all') {
+        state.startDate = '';
+        state.endDate = '';
+        if (startDateInput) startDateInput.value = '';
+        if (endDateInput) endDateInput.value = '';
+      } else if (range === 'today') {
+        const todayStr = formatDate(now);
+        state.startDate = todayStr;
+        state.endDate = todayStr;
+        if (startDateInput) startDateInput.value = todayStr;
+        if (endDateInput) endDateInput.value = todayStr;
+      } else if (range === 'next7') {
+        const todayStr = formatDate(now);
+        const endD = new Date(now);
+        endD.setDate(now.getDate() + 7);
+        const endStr = formatDate(endD);
+        state.startDate = todayStr;
+        state.endDate = endStr;
+        if (startDateInput) startDateInput.value = todayStr;
+        if (endDateInput) endDateInput.value = endStr;
+      } else if (range === 'thisMonth') {
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        state.startDate = formatDate(firstDay);
+        state.endDate = formatDate(lastDay);
+        if (startDateInput) startDateInput.value = state.startDate;
+        if (endDateInput) endDateInput.value = state.endDate;
+      }
+
+      fetchBookings(false);
+    });
+  });
+
+  // Clear filters
+  function resetAllFilters() {
+    state.search = '';
+    state.roomId = '';
+    state.customerId = '';
+    state.status = '';
+    state.startDate = '';
+    state.endDate = '';
+
+    if (searchInput) searchInput.value = '';
+    if (roomSelect) roomSelect.value = '';
+    if (customerSelect) customerSelect.value = '';
+    if (statusSelect) statusSelect.value = '';
+    if (startDateInput) startDateInput.value = '';
+    if (endDateInput) endDateInput.value = '';
+    updateSearchClearVisibility();
+
+    presetBtns.forEach(b => {
+      if (b.getAttribute('data-range') === 'all') {
+        b.classList.add('active');
+      } else {
+        b.classList.remove('active');
+      }
+    });
+
+    fetchBookings(true);
+  }
+
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', resetAllFilters);
+  }
+
+  if (emptyResetBtn) {
+    emptyResetBtn.addEventListener('click', resetAllFilters);
+  }
+
+  // Refresh button
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      fetchBookings(true);
+    });
+  }
+
+  // Bind initial cancel buttons from SSR
+  bindCancelButtons();
+
+  // Trigger initial live fetch on page load: GET /api/bookings
+  fetchBookings(false);
+}
+

@@ -240,23 +240,40 @@ router.post('/bookings', handleBookingPost);
 // 4. Bookings List & Overview
 router.get('/bookings', async (req, res) => {
   try {
-    const { search, roomId, status, date } = req.query;
-    const bookings = await bookingService.getBookings({ search, roomId, status, date });
+    const { search, customerId, roomId, status, date, startDate, endDate } = req.query;
+
+    // If client requested JSON via Accept header or query param
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || req.query.json === 'true') {
+      const bookings = await bookingService.getBookings({ search, customerId, roomId, status, date, startDate, endDate });
+      return res.json({
+        success: true,
+        count: bookings.length,
+        data: bookings
+      });
+    }
+
+    const bookings = await bookingService.getBookings({ search, customerId, roomId, status, date, startDate, endDate });
     const rooms = await bookingService.getRooms();
+    const customers = await bookingService.getCustomers();
 
     res.render('bookings', {
       bookings,
       rooms,
-      filters: { search, roomId, status, date },
+      customers,
+      filters: { search, customerId, roomId, status, date, startDate, endDate },
       selectedCustomer: null,
       successMessage: req.query.success || null,
       errorMessage: req.query.error || null
     });
   } catch (err) {
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json')) || req.query.json === 'true') {
+      return res.status(500).json({ success: false, error: err.message });
+    }
     res.render('bookings', {
       bookings: [],
       rooms: [],
-      filters: { search: '', roomId: '', status: '', date: '' },
+      customers: [],
+      filters: { search: '', customerId: '', roomId: '', status: '', date: '', startDate: '', endDate: '' },
       selectedCustomer: null,
       successMessage: null,
       errorMessage: `Failed to load bookings: ${err.message}`

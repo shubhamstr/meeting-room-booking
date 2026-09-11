@@ -8,155 +8,314 @@
         Meeting Room Bookings
       </h1>
       <p class="page-subtitle">
-        Overview of all scheduled and active reservations, slot allocations, and customer meeting sessions.
+        Live overview of scheduled and active reservations, slot allocations, and customer meeting sessions.
       </p>
     </div>
-    <div>
-      <a href="/customers" class="btn btn-primary">
+    <div style="display: flex; gap: 0.75rem;">
+      <a href="/rooms" class="btn btn-primary">
         <i class="fa-solid fa-plus"></i>
-        <span>New Booking</span>
+        <span>Book a Room</span>
       </a>
     </div>
   </div>
 </div>
 
-<!-- Search & Filter Controls -->
-<form action="/bookings" method="GET" class="search-filter-box">
-  <div class="search-input-group">
-    <i class="fa-solid fa-magnifying-glass"></i>
-    <input 
-      type="text" 
-      name="search" 
-      class="search-input" 
-      placeholder="Search by meeting title, customer, room, or booking ID..." 
-      value="<%= filters.search || '' %>"
-    >
+<!-- Dynamic Summary Metrics Ribbon -->
+<div class="stats-grid" id="bookings-stats-ribbon">
+  <div class="stat-card">
+    <div class="stat-icon-wrap indigo">
+      <i class="fa-solid fa-calendar-check"></i>
+    </div>
+    <div class="stat-info">
+      <div class="stat-val" id="kpi-total-bookings"><%= bookings.length %></div>
+      <div class="stat-lbl">Total Bookings</div>
+    </div>
   </div>
 
-  <div class="filter-group">
-    <select name="roomId" class="select-control" onchange="this.form.submit()">
-      <option value="">All Meeting Rooms</option>
-      <% rooms.forEach(room => { %>
-        <option value="<%= room.id %>" <%= filters.roomId === room.id ? 'selected' : '' %>>
-          <%= room.name %>
-        </option>
-      <% }) %>
-    </select>
-
-    <select name="status" class="select-control" onchange="this.form.submit()">
-      <option value="">All Statuses</option>
-      <option value="Confirmed" <%= filters.status === 'Confirmed' ? 'selected' : '' %>>Confirmed</option>
-      <option value="Cancelled" <%= filters.status === 'Cancelled' ? 'selected' : '' %>>Cancelled</option>
-    </select>
-
-    <% if (filters.search || filters.roomId || filters.status) { %>
-      <a href="/bookings" class="btn btn-secondary btn-sm" title="Clear Filters">
-        <i class="fa-solid fa-filter-circle-xmark"></i> Clear
-      </a>
-    <% } %>
+  <div class="stat-card">
+    <div class="stat-icon-wrap emerald">
+      <i class="fa-solid fa-circle-check"></i>
+    </div>
+    <div class="stat-info">
+      <div class="stat-val" id="kpi-confirmed-bookings">
+        <%= bookings.filter(b => b.status === 'Confirmed').length %>
+      </div>
+      <div class="stat-lbl">Confirmed</div>
+    </div>
   </div>
-</form>
 
-<!-- Bookings Table Container -->
-<div class="bookings-table-container">
-  <% if (bookings && bookings.length > 0) { %>
-    <table class="bookings-table">
+  <div class="stat-card">
+    <div class="stat-icon-wrap amber">
+      <i class="fa-solid fa-ban"></i>
+    </div>
+    <div class="stat-info">
+      <div class="stat-val" id="kpi-cancelled-bookings">
+        <%= bookings.filter(b => b.status === 'Cancelled').length %>
+      </div>
+      <div class="stat-lbl">Cancelled</div>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon-wrap cyan">
+      <i class="fa-solid fa-dollar-sign"></i>
+    </div>
+    <div class="stat-info">
+      <div class="stat-val" id="kpi-total-revenue">
+        $<%= bookings.filter(b => b.status === 'Confirmed').reduce((acc, b) => acc + (parseFloat(b.totalCost) || 0), 0) %>
+      </div>
+      <div class="stat-lbl">Active Value</div>
+    </div>
+  </div>
+</div>
+
+<!-- Search & Filter Panel (Calls GET /api/bookings API) -->
+<div class="bookings-filter-panel" id="bookings-filter-panel">
+  <!-- Primary Filter Row: Search, Room, Customer, Status, Actions -->
+  <div class="bookings-filter-row">
+    <div class="search-input-group" style="min-width: 240px;">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input 
+        type="text" 
+        id="booking-search-input" 
+        class="search-input" 
+        placeholder="Search meeting, customer, room, or ref ID..." 
+        value="<%= filters.search || '' %>"
+        autocomplete="off"
+      >
+      <button 
+        type="button" 
+        id="booking-search-clear" 
+        style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); cursor: pointer; display: <%= filters.search ? 'inline-flex' : 'none' %>;" 
+        title="Clear Search"
+      >
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <div class="filter-group">
+      <!-- Room Filter -->
+      <select id="booking-room-filter" class="select-control" title="Filter by Room">
+        <option value="">All Meeting Rooms</option>
+        <% if (typeof rooms !== 'undefined' && rooms) { %>
+          <% rooms.forEach(room => { %>
+            <option value="<%= room.id %>" <%= filters.roomId === room.id ? 'selected' : '' %>>
+              <%= room.name %> (<%= room.capacity %> seats)
+            </option>
+          <% }) %>
+        <% } %>
+      </select>
+
+      <!-- Customer Filter -->
+      <select id="booking-customer-filter" class="select-control" title="Filter by Customer">
+        <option value="">All Customers</option>
+        <% if (typeof customers !== 'undefined' && customers) { %>
+          <% customers.forEach(cust => { %>
+            <option value="<%= cust.id %>" <%= filters.customerId === cust.id ? 'selected' : '' %>>
+              <%= cust.name %> (<%= cust.company %>)
+            </option>
+          <% }) %>
+        <% } %>
+      </select>
+
+      <!-- Status Filter -->
+      <select id="booking-status-filter" class="select-control" title="Filter by Status">
+        <option value="">All Statuses</option>
+        <option value="Confirmed" <%= filters.status === 'Confirmed' ? 'selected' : '' %>>Confirmed</option>
+        <option value="Cancelled" <%= filters.status === 'Cancelled' ? 'selected' : '' %>>Cancelled</option>
+      </select>
+
+      <!-- Refresh API Button -->
+      <button type="button" id="booking-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh Live Bookings">
+        <i class="fa-solid fa-arrows-rotate" id="booking-refresh-icon"></i>
+        <span>Refresh</span>
+      </button>
+
+      <!-- Clear All Filters Button -->
+      <button type="button" id="booking-clear-filters-btn" class="btn btn-secondary btn-sm" title="Reset all filters">
+        <i class="fa-solid fa-filter-circle-xmark"></i>
+        <span>Clear</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Secondary Row: Date Range Selector & Presets -->
+  <div class="bookings-filter-row secondary-row">
+    <div class="date-range-filter-container">
+      <span class="date-range-label">
+        <i class="fa-regular fa-calendar"></i> Date Range:
+      </span>
+      <input 
+        type="date" 
+        id="booking-start-date" 
+        class="date-input-field" 
+        value="<%= filters.startDate || '' %>" 
+        title="Start Date"
+        placeholder="Start Date"
+      >
+      <span class="date-separator">to</span>
+      <input 
+        type="date" 
+        id="booking-end-date" 
+        class="date-input-field" 
+        value="<%= filters.endDate || '' %>" 
+        title="End Date"
+        placeholder="End Date"
+      >
+    </div>
+
+    <!-- Quick Date Shortcuts -->
+    <div class="date-quick-presets">
+      <button type="button" class="date-preset-btn active" data-range="all">All Dates</button>
+      <button type="button" class="date-preset-btn" data-range="today">Today</button>
+      <button type="button" class="date-preset-btn" data-range="next7">Next 7 Days</button>
+      <button type="button" class="date-preset-btn" data-range="thisMonth">This Month</button>
+    </div>
+
+    <div class="bookings-count-pill" id="bookings-count-pill">
+      Showing <strong id="bookings-rendered-count"><%= bookings.length %></strong> Bookings
+    </div>
+  </div>
+</div>
+
+<!-- Bookings Live Table Container -->
+<div class="bookings-table-container" id="bookings-table-card">
+  <!-- Loading Placeholder State -->
+  <div id="bookings-loading-state" style="display: none; padding: 3rem 2rem; text-align: center;">
+    <div style="display: inline-flex; align-items: center; justify-content: center; width: 50px; height: 50px; border-radius: 50%; background: rgba(99, 102, 241, 0.15); color: var(--primary-400); font-size: 1.4rem; margin-bottom: 1rem;">
+      <i class="fa-solid fa-circle-notch fa-spin"></i>
+    </div>
+    <p style="color: #fff; font-weight: 600; margin-bottom: 0.25rem;">Fetching Bookings Data...</p>
+    <p style="color: var(--text-muted); font-size: 0.85rem;">Applying live filters via GET /api/bookings</p>
+  </div>
+
+  <!-- Bookings Data Table -->
+  <div style="overflow-x: auto;" id="bookings-table-wrap">
+    <table class="bookings-table" id="bookings-table">
       <thead>
         <tr>
-          <th>Booking Ref</th>
-          <th>Meeting Title</th>
-          <th>Customer</th>
+          <th>Ref ID</th>
+          <th>Meeting Title &amp; Details</th>
+          <th>Customer Profile</th>
           <th>Room &amp; Space</th>
-          <th>Date &amp; Slot</th>
-          <th>Total</th>
+          <th>Date &amp; Time Slot</th>
+          <th>Total Cost</th>
           <th>Status</th>
           <th style="text-align: right;">Action</th>
         </tr>
       </thead>
-      <tbody>
-        <% bookings.forEach(booking => { %>
-          <tr>
-            <td>
-              <span style="font-family: monospace; font-weight: 700; color: var(--primary-400); background: rgba(99,102,241,0.12); padding: 0.2rem 0.5rem; border-radius: 6px;">
-                <%= booking.id %>
-              </span>
-            </td>
-            <td>
-              <div style="font-weight: 700; color: #fff; margin-bottom: 0.15rem;">
-                <%= booking.title %>
-              </div>
-              <div style="font-size: 0.78rem; color: var(--text-dim);">
-                <i class="fa-solid fa-users" style="margin-right: 0.25rem;"></i> <%= booking.attendees %> Attendees
-                <% if (booking.notes) { %>
-                  &bull; <span title="<%= booking.notes %>"><i class="fa-solid fa-note-sticky"></i> Note attached</span>
+      <tbody id="bookings-table-body">
+        <% if (bookings && bookings.length > 0) { %>
+          <% bookings.forEach(booking => { %>
+            <tr id="booking-row-<%= booking.id %>">
+              <td>
+                <span class="booking-ref-badge">
+                  <%= booking.id %>
+                </span>
+                <% if (booking.googleEventId) { %>
+                  <div>
+                    <span class="cal-synced-badge" title="Synced to Google Calendar">
+                      <i class="fa-brands fa-google"></i> Synced
+                    </span>
+                  </div>
                 <% } %>
-              </div>
-            </td>
-            <td>
-              <div style="font-weight: 600; color: #fff;">
-                <%= booking.customerName %>
-              </div>
-              <div style="font-size: 0.78rem; color: var(--text-muted);">
-                <%= booking.customerCompany %>
-              </div>
-            </td>
-            <td>
-              <div style="font-weight: 600; color: var(--accent-cyan);">
-                <%= booking.roomName %>
-              </div>
-            </td>
-            <td>
-              <div style="font-weight: 600; color: #fff;">
-                <i class="fa-regular fa-calendar" style="color: var(--primary-400); margin-right: 0.3rem;"></i>
-                <%= booking.date %>
-              </div>
-              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
-                <i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>
-                <%= booking.slotLabel %>
-              </div>
-            </td>
-            <td>
-              <span style="font-weight: 700; color: var(--accent-emerald); font-size: 0.95rem;">
-                $<%= booking.totalCost %>
-              </span>
-            </td>
-            <td>
-              <% if (booking.status === 'Confirmed') { %>
-                <span class="status-badge confirmed">
-                  <i class="fa-solid fa-circle-check"></i> Confirmed
+              </td>
+              <td>
+                <div style="font-weight: 700; color: #fff; margin-bottom: 0.15rem;">
+                  <%= booking.title %>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-dim); display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+                  <span><i class="fa-solid fa-users" style="margin-right: 0.25rem;"></i> <%= booking.attendees || 2 %> Attendees</span>
+                  <% if (booking.notes) { %>
+                    <span>&bull;</span>
+                    <span title="<%= booking.notes %>" style="color: var(--text-muted);"><i class="fa-solid fa-note-sticky"></i> Note</span>
+                  <% } %>
+                </div>
+              </td>
+              <td>
+                <div style="font-weight: 600; color: #fff;">
+                  <%= booking.customerName %>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted);">
+                  <%= booking.customerCompany %>
+                </div>
+                <% if (booking.customerEmail) { %>
+                  <div style="font-size: 0.74rem; color: var(--text-dim);">
+                    <%= booking.customerEmail %>
+                  </div>
+                <% } %>
+              </td>
+              <td>
+                <div style="font-weight: 600; color: var(--accent-cyan);">
+                  <%= booking.roomName %>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-dim);">
+                  <%= booking.roomFloor || '' %> <%= booking.roomType ? '(' + booking.roomType + ')' : '' %>
+                </div>
+              </td>
+              <td>
+                <div style="font-weight: 600; color: #fff;">
+                  <i class="fa-regular fa-calendar" style="color: var(--primary-400); margin-right: 0.3rem;"></i>
+                  <%= booking.date %>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
+                  <i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>
+                  <%= booking.slotLabel %>
+                </div>
+              </td>
+              <td>
+                <span style="font-weight: 700; color: var(--accent-emerald); font-size: 0.95rem;">
+                  $<%= booking.totalCost %>
                 </span>
-              <% } else { %>
-                <span class="status-badge cancelled">
-                  <i class="fa-solid fa-ban"></i> Cancelled
-                </span>
-              <% } %>
-            </td>
-            <td style="text-align: right;">
-              <% if (booking.status === 'Confirmed') { %>
-                <form action="/bookings/<%= booking.id %>/cancel" method="POST" onsubmit="return confirm('Are you sure you want to cancel booking <%= booking.id %> for <%= booking.customerName %>?');" style="display: inline;">
-                  <button type="submit" class="btn btn-danger-outline" title="Cancel Booking">
+              </td>
+              <td>
+                <% if (booking.status === 'Confirmed') { %>
+                  <span class="status-badge confirmed" id="status-badge-<%= booking.id %>">
+                    <i class="fa-solid fa-circle-check"></i> Confirmed
+                  </span>
+                <% } else { %>
+                  <span class="status-badge cancelled" id="status-badge-<%= booking.id %>">
+                    <i class="fa-solid fa-ban"></i> Cancelled
+                  </span>
+                <% } %>
+              </td>
+              <td style="text-align: right;">
+                <% if (booking.status === 'Confirmed') { %>
+                  <button 
+                    type="button" 
+                    class="btn-danger-outline cancel-booking-btn" 
+                    data-booking-id="<%= booking.id %>"
+                    data-customer-name="<%= booking.customerName %>"
+                    title="Cancel Booking"
+                  >
                     <i class="fa-solid fa-xmark"></i> Cancel
                   </button>
-                </form>
-              <% } else { %>
-                <span style="font-size: 0.8rem; color: var(--text-dim); font-style: italic;">Inactive</span>
-              <% } %>
-            </td>
-          </tr>
-        <% }) %>
+                <% } else { %>
+                  <span style="font-size: 0.8rem; color: var(--text-dim); font-style: italic;">Cancelled</span>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        <% } %>
       </tbody>
     </table>
-  <% } else { %>
-    <div class="empty-state">
-      <div class="empty-state-icon">
-        <i class="fa-solid fa-calendar-xmark"></i>
-      </div>
-      <p class="empty-state-text">No meeting bookings found for the selected filters.</p>
-      <a href="/customers" class="btn btn-primary btn-sm">
-        <i class="fa-solid fa-calendar-plus"></i> Book a Room Now
+  </div>
+
+  <!-- Empty State -->
+  <div class="empty-state" id="bookings-empty-state" style="<%= (bookings && bookings.length > 0) ? 'display: none;' : 'display: flex;' %>">
+    <div class="empty-state-icon">
+      <i class="fa-solid fa-calendar-xmark"></i>
+    </div>
+    <p class="empty-state-text" id="bookings-empty-text">No meeting bookings found matching the selected filters.</p>
+    <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
+      <button type="button" class="btn btn-secondary btn-sm" id="empty-reset-filters-btn">
+        <i class="fa-solid fa-arrows-rotate"></i> Reset Filters
+      </button>
+      <a href="/rooms" class="btn btn-primary btn-sm">
+        <i class="fa-solid fa-calendar-plus"></i> Book a Room
       </a>
     </div>
-  <% } %>
+  </div>
 </div>
 
 <%- include('layout/footer') %>

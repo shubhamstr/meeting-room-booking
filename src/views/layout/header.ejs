@@ -30,7 +30,21 @@
         </div>
       </a>
 
-
+      <!-- Navigation Links -->
+      <div class="nav-links">
+        <a href="/customers" class="nav-link <%= typeof activeTab !== 'undefined' && activeTab === 'customers' ? 'active' : '' %>" id="nav-customers-link">
+          <i class="fa-solid fa-users"></i>
+          <span>Customers</span>
+        </a>
+        <a href="/rooms" class="nav-link <%= typeof activeTab !== 'undefined' && activeTab === 'rooms' ? 'active' : '' %>" id="nav-rooms-link">
+          <i class="fa-solid fa-door-open"></i>
+          <span>Rooms</span>
+        </a>
+        <a href="/bookings" class="nav-link <%= typeof activeTab !== 'undefined' && activeTab === 'bookings' ? 'active' : '' %>" id="nav-bookings-link">
+          <i class="fa-solid fa-calendar-days"></i>
+          <span>Bookings</span>
+        </a>
+      </div>
 
       <!-- Status Badges -->
       <div class="nav-right-actions" style="display: flex; align-items: center; gap: 0.75rem;">

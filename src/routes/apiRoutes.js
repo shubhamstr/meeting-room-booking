@@ -178,8 +178,8 @@ router.get('/slots', async (req, res) => {
 // 4. Bookings API
 router.get('/bookings', async (req, res) => {
   try {
-    const { search, customerId, roomId, status, date } = req.query;
-    const bookings = await bookingService.getBookings({ search, customerId, roomId, status, date });
+    const { search, customerId, roomId, status, date, startDate, endDate } = req.query;
+    const bookings = await bookingService.getBookings({ search, customerId, roomId, status, date, startDate, endDate });
     res.json({
       success: true,
       count: bookings.length,
