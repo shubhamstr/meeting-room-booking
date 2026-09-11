@@ -1,6 +1,6 @@
-# Turbosoft API
+# Turbosoft API & Meeting Room Booking System
 
-A modern, lightweight Node.js and Express.js REST API starter configured with ES Modules, environment management, and essential middleware.
+A modern, high-performance Node.js and Express.js REST API and SSR web service built for meeting room reservations with external Zoho CRM customer synchronization and Google Calendar event management.
 
 ---
 
@@ -9,6 +9,7 @@ A modern, lightweight Node.js and Express.js REST API starter configured with ES
 - **Runtime:** [Node.js](https://nodejs.org/) (ES Modules / `"type": "module"`)
 - **Framework:** [Express.js](https://expressjs.com/) (v5)
 - **CRM Integration:** [@zohocrm/nodejs-sdk-2.0](https://www.npmjs.com/package/@zohocrm/nodejs-sdk-2.0)
+- **Calendar Integration:** Google Calendar API v3
 - **Templating Engine:** [EJS](https://ejs.co/)
 - **Utilities & Middleware:**
   - [cors](https://www.npmjs.com/package/cors) - Cross-Origin Resource Sharing
@@ -19,11 +20,12 @@ A modern, lightweight Node.js and Express.js REST API starter configured with ES
 
 ---
 
-## 📁 Project Structure
+## 📁 Architecture & Route Separation
 
 ```text
 turbosoft/
-├── storage/                  # Persisted Zoho CRM SDK tokens and logs
+├── storage/                  # Persisted OAuth tokens for Zoho CRM and Google Calendar
+│   ├── google_calendar_tokens.json
 │   ├── zoho_connection.json
 │   └── zoho_sdk_tokens.txt
 ├── src/
@@ -31,18 +33,21 @@ turbosoft/
 │   ├── middlewares/
 │   │   └── errorHandler.js   # 404 and global error handling middleware
 │   ├── routes/
-│   │   ├── index.js          # Main customer and meeting room booking routes
-│   │   └── zohoRoutes.js     # Zoho CRM OAuth, connect, status & sync endpoints
+│   │   ├── frontendRoutes.js # Cleanly separated SSR view rendering routes (/, /customers, /book, /bookings)
+│   │   ├── zohoRoutes.js     # Zoho CRM APIs (/api/zoho/*)
+│   │   ├── calendarRoutes.js # Google Calendar APIs (/api/calendar/*)
+│   │   └── apiRoutes.js      # Core resource APIs (/api/*)
 │   ├── services/
-│   │   ├── bookingService.js # Customer & meeting room management service
-│   │   └── zohoCrmService.js # Zoho CRM Node.js SDK 2.0 connection & API service
+│   │   ├── bookingService.js       # Customer & meeting room reservation service
+│   │   ├── zohoCrmService.js       # Zoho CRM Node.js SDK 2.0 integration
+│   │   └── googleCalendarService.js# Google Calendar OAuth2 & Events integration
 │   ├── views/                # EJS UI templates (customers, book, bookings, layout)
-│   ├── app.js                # Express application setup & middleware configuration
-│   └── server.js             # Server initialization & graceful shutdown
-├── public/                   # Static CSS and JS assets
-├── .env.example              # Template for environment variables
-├── package.json              # Project dependencies and scripts
-└── README.md                 # Project documentation
+│   ├── app.js                # Express app setup & route mounting
+│   └── server.js             # Server entrypoint
+├── public/                   # Static CSS and assets
+├── .env.example              # Environment variables template
+├── package.json
+└── README.md
 ```
 
 ---
@@ -55,7 +60,7 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 
 ### Installation
 
-1. **Clone the repository and navigate to the project directory:**
+1. **Navigate to the project directory:**
    ```bash
    cd turbosoft
    ```
@@ -68,62 +73,75 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 3. **Configure environment variables:**
    Copy the example environment configuration file to create your `.env` file:
    ```bash
-   # On Windows (PowerShell):
+   # Windows PowerShell:
    Copy-Item .env.example .env
 
-   # On Linux / macOS:
+   # Linux / macOS:
    cp .env.example .env
    ```
 
-4. **Set your Zoho CRM credentials in `.env`:**
-   ```env
-   PORT=5000
-   NODE_ENV=development
-   ZOHO_API_CLIENT_ID=your_zoho_client_id
-   ZOHO_API_CLIENT_SECRET=your_zoho_client_secret
-   ZOHO_DATA_CENTER=INDataCenter
-   ZOHO_REDIRECT_URI=http://localhost:5000/zoho/callback
+4. **Start the development server:**
+   ```bash
+   npm run dev
    ```
-
----
-
-## ⚡ Zoho CRM Integration
-
-### OAuth Connection Flow
-1. Open the application at `http://localhost:5000/` (redirects to `/customers`).
-2. Click the **Connect Zoho CRM** button in the header navigation or the hero banner.
-3. Select your Zoho Data Center region (India `.in`, US `.com`, EU `.eu`, AU `.com.au`, JP `.jp`).
-4. Authorize access on Zoho's consent screen.
-5. The application securely persists tokens using SDK's `FileStore` and connects to Zoho CRM.
-6. Click **Sync Zoho CRM** to import CRM Contacts and Leads directly into the customer booking directory.
-
----
-
-## 💻 Available Scripts
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Starts the server in development mode with **nodemon** (auto-reloads on changes) |
-| `npm start` | Starts the server in production mode using **node** |
 
 ---
 
 ## 🔌 API & Route Endpoints
 
+### 🖥️ 1. Frontend Web Routes (Separated Views)
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/` | Root / Redirects to Integrations & Hub (`/customers`) |
+| `GET` | `/customers` | Integrations hub (Zoho CRM & Google Calendar connection cards) |
+| `POST` | `/customers/new` | Quick customer registration from UI |
+| `GET` | `/book` | Interactive meeting room and time slot picker view |
+| `POST` | `/book` | Submit reservation (automatically syncs to Google Calendar if connected) |
+| `GET` | `/bookings` | Reservations directory & status management |
+| `POST` | `/bookings/:id/cancel` | Cancel booking from UI (removes calendar event) |
+
+---
+
+### ⚡ 2. Zoho CRM APIs (`/api/zoho/*`)
+
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/` | Root / Redirects to customer selection directory (`/customers`) |
-| `GET` | `/customers` | Customer directory & selection view with Zoho CRM connection banner |
-| `POST` | `/customers/new` | Quick-register a new customer profile |
-| `GET` | `/book` | Interactive room selection & time slot picker |
-| `POST` | `/book` | Confirm and create a meeting room reservation |
-| `GET` | `/bookings` | View and filter all room reservations |
-| `POST` | `/bookings/:id/cancel` | Cancel an existing booking reservation |
-| `GET` | `/zoho/connect` | Initiates OAuth authorization with Zoho Accounts |
-| `GET` | `/zoho/callback` | Handles OAuth redirect from Zoho and initializes SDK |
-| `GET` | `/zoho/status` | Returns JSON status of Zoho CRM connection |
-| `POST` | `/zoho/sync` | Syncs Contacts & Leads from Zoho CRM into Customer list |
-| `POST` | `/zoho/token-connect` | Connects via developer Self-Client grant/refresh token |
-| `POST` | `/zoho/disconnect` | Disconnects Zoho CRM and clears stored tokens |
-| `GET` | `/health` | Server health check & uptime endpoint |
+| `GET` | `/api/zoho/connect` | Initiates Zoho OAuth 2.0 flow or returns authorization URL |
+| `GET` | `/api/zoho/callback` | Handles OAuth redirect from Zoho and initializes SDK |
+| `GET` | `/api/zoho/status` | Returns JSON status of Zoho CRM connection |
+| `POST` | `/api/zoho/token-connect` | Connects via developer Self-Client grant/refresh token |
+| `POST` | `/api/zoho/sync` | Syncs Contacts & Leads from Zoho CRM into local customer directory |
+| `POST` | `/api/zoho/disconnect` | Disconnects Zoho CRM and clears stored tokens |
+| `GET` | `/api/zoho/contacts` | Directly queries contacts from Zoho CRM |
 
+---
+
+### 📅 3. Google Calendar APIs (`/api/calendar/*`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/calendar/connect` | Initiates Google Calendar OAuth 2.0 authorization URL |
+| `GET` | `/api/calendar/callback` | Handles Google OAuth callback and token exchange |
+| `GET` | `/api/calendar/status` | Returns JSON status of Google Calendar connection |
+| `GET` | `/api/calendar/events` | Lists upcoming events from primary Google Calendar |
+| `POST` | `/api/calendar/events` | Creates a calendar event for a meeting room booking |
+| `DELETE`| `/api/calendar/events/:eventId` | Deletes a calendar event from Google Calendar |
+| `POST` | `/api/calendar/sync` | Bulk syncs all local confirmed bookings to Google Calendar |
+| `POST` | `/api/calendar/disconnect` | Disconnects Google Calendar account |
+
+---
+
+### 🏢 4. Core Resource APIs (`/api/*`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/health` | Service health, uptime, and integration status check |
+| `GET` | `/api/customers` | Get customer list with optional `?search=` filtering |
+| `POST` | `/api/customers` | Create a new customer profile via API |
+| `GET` | `/api/rooms` | List all meeting rooms (with optional `?minCapacity=`) |
+| `GET` | `/api/rooms/:id/availability` | Query free & busy slots for a room on `?date=YYYY-MM-DD` |
+| `GET` | `/api/slots` | Fetch time slots with availability for `?roomId=&date=` |
+| `GET` | `/api/bookings` | List all bookings with query filters |
+| `POST` | `/api/bookings` | Book a room (auto-creates Google Calendar event) |
+| `POST` | `/api/bookings/:id/cancel` | Cancel booking (removes Google Calendar event) |

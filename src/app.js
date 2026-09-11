@@ -3,9 +3,14 @@ import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import routes from './routes/index.js';
+
+import frontendRoutes from './routes/frontendRoutes.js';
 import zohoRoutes from './routes/zohoRoutes.js';
+import calendarRoutes from './routes/calendarRoutes.js';
+import apiRoutes from './routes/apiRoutes.js';
+
 import { zohoCrmService } from './services/zohoCrmService.js';
+import { googleCalendarService } from './services/googleCalendarService.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,13 +35,17 @@ app.use(express.urlencoded({ extended: true }));
 // Global locals for views
 app.use((req, res, next) => {
   res.locals.zohoStatus = zohoCrmService.getConnectionStatus();
+  res.locals.calendarStatus = googleCalendarService.getConnectionStatus();
   next();
 });
 
-// Routes
-app.use('/zoho', zohoRoutes);
-app.use('/', routes);
+// Backend API Routes (namespaced under /api)
+app.use('/api/zoho', zohoRoutes);
+app.use('/api/calendar', calendarRoutes);
+app.use('/api', apiRoutes);
 
+// Frontend SSR Views Routes (separated)
+app.use('/', frontendRoutes);
 
 // Error Handlers
 app.use(notFoundHandler);

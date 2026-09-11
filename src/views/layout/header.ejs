@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= typeof title !== 'undefined' ? title + ' | TurboSpace' : 'TurboSpace - Meeting Room Booking' %></title>
-  <meta name="description" content="Modern meeting room booking system with dynamic slot picker and customer management">
+  <meta name="description" content="Modern meeting room booking system with Zoho CRM and Google Calendar integrations">
   
   <!-- Google Fonts: Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -27,24 +27,45 @@
         </div>
         <div>
           <span class="brand-title">Meeting Room Booking</span>
-          <!-- <span class="brand-tag">EJS Engine</span> -->
         </div>
       </a>
 
+      <!-- Navigation Links -->
+      <div class="nav-links" style="display: flex; align-items: center; gap: 1rem;">
+        <a href="/customers" class="nav-link <%= typeof activeTab !== 'undefined' && activeTab === 'customers' ? 'active' : '' %>">
+          <i class="fa-solid fa-sliders"></i>
+          <span>Integrations</span>
+        </a>
+        <a href="/book" class="nav-link <%= typeof activeTab !== 'undefined' && activeTab === 'book' ? 'active' : '' %>">
+          <i class="fa-solid fa-calendar-plus"></i>
+          <span>Book Room</span>
+        </a>
+        <a href="/bookings" class="nav-link <%= typeof activeTab !== 'undefined' && activeTab === 'bookings' ? 'active' : '' %>">
+          <i class="fa-solid fa-list-check"></i>
+          <span>Reservations</span>
+        </a>
+      </div>
+
+      <!-- Status Badges -->
       <div class="nav-right-actions" style="display: flex; align-items: center; gap: 0.75rem;">
         <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
           <div class="zoho-nav-badge connected" title="Zoho CRM Connected (<%= zohoStatus.dataCenter %>)">
             <span class="pulse-dot"></span>
             <i class="fa-solid fa-cloud-bolt"></i>
-            <span>Zoho CRM Connected</span>
+            <span>Zoho CRM</span>
+          </div>
+        <% } %>
+
+        <% if (typeof calendarStatus !== 'undefined' && calendarStatus && calendarStatus.connected) { %>
+          <div class="zoho-nav-badge connected" style="background: rgba(66, 133, 244, 0.15); border-color: rgba(66, 133, 244, 0.4); color: #93c5fd;" title="Google Calendar Connected (<%= calendarStatus.userEmail || '' %>)">
+            <span class="pulse-dot" style="background: #4285f4; box-shadow: 0 0 8px #4285f4;"></span>
+            <i class="fa-brands fa-google"></i>
+            <span>Calendar</span>
           </div>
         <% } %>
       </div>
     </div>
   </nav>
-
-
-
 
   <!-- Alert / Flash notification banner if any -->
   <main class="main-wrapper">
@@ -59,5 +80,12 @@
       <div class="alert-banner error" id="flash-error">
         <i class="fa-solid fa-triangle-exclamation"></i>
         <span><%= errorMessage %></span>
+      </div>
+    <% } %>
+
+    <% if (typeof infoMessage !== 'undefined' && infoMessage) { %>
+      <div class="alert-banner info" id="flash-info" style="background: rgba(59, 130, 246, 0.15); border-left: 4px solid #3b82f6; color: #93c5fd; padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
+        <i class="fa-solid fa-circle-info"></i>
+        <span><%= infoMessage %></span>
       </div>
     <% } %>

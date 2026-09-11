@@ -142,11 +142,21 @@ class BookingService {
       notes: notes?.trim() || '',
       totalCost: room.hourlyRate,
       status: 'Confirmed',
+      googleEventId: null,
       createdAt: new Date().toISOString()
     };
 
     this.bookings.unshift(newBooking);
     return newBooking;
+  }
+
+  updateBooking(bookingId, updates = {}) {
+    const booking = this.bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      throw new Error('Booking not found.');
+    }
+    Object.assign(booking, updates);
+    return booking;
   }
 
   cancelBooking(bookingId) {

@@ -1,121 +1,263 @@
-<%- include('layout/header', { title: 'Zoho CRM Integration', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage }) %>
+<%- include('layout/header', { title: 'Integrations & Services Hub', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage }) %>
 
 <div class="landing-container">
-  <div class="landing-card">
-    <div class="landing-icon-wrap">
-      <i class="fa-solid fa-bolt-lightning"></i>
-    </div>
-    
-    <h1 class="landing-title">Connect to Zoho CRM</h1>
+  
+  <div class="page-intro-header">
+    <h1 class="landing-main-title">Integrations & API Management</h1>
     <p class="landing-subtitle">
-      Authorize and establish a secure connection with Zoho CRM APIs using <code>@zohocrm/nodejs-sdk-2.0</code>.
+      Connect your CRM and Calendar accounts to automate meeting room reservations across systems.
     </p>
-
-    <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
-      <!-- Connected State -->
-      <div class="landing-status-box connected">
-        <div class="status-indicator">
-          <span class="pulse-dot"></span>
-        </div>
-        <div class="status-details">
-          <div class="status-label">Zoho CRM Connected</div>
-          <div class="status-org">
-            Organization: <strong><%= zohoStatus.organization ? zohoStatus.organization.companyName : 'Connected Account' %></strong>
-          </div>
-          <div class="status-meta">
-            Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; Client ID: <span><%= zohoStatus.clientId %></span>
-          </div>
-        </div>
-      </div>
-
-      <div class="landing-actions">
-        <form action="/zoho/disconnect" method="POST" style="margin: 0;">
-          <button type="submit" class="btn btn-secondary">
-            <i class="fa-solid fa-plug-circle-xmark"></i>
-            <span>Disconnect CRM</span>
-          </button>
-        </form>
-      </div>
-    <% } else { %>
-      <!-- Disconnected State: Single Connect Button -->
-      <div class="landing-status-box disconnected">
-        <div class="status-indicator">
-          <span class="pulse-dot grey"></span>
-        </div>
-        <div class="status-details">
-          <div class="status-label">Status: Not Connected</div>
-          <div class="status-meta">
-            Click below to authorize via Zoho Accounts OAuth 2.0
-          </div>
-        </div>
-      </div>
-
-      <div class="landing-actions">
-        <a href="/zoho/connect" class="btn btn-zoho btn-lg">
-          <i class="fa-solid fa-arrow-right-to-bracket"></i>
-          <span>Connect to Zoho CRM</span>
-        </a>
-      </div>
-    <% } %>
   </div>
+
+  <div class="integrations-grid">
+
+    <!-- 1. ZOHO CRM INTEGRATION CARD -->
+    <div class="landing-card integration-card zoho-card">
+      <div class="landing-icon-wrap zoho-icon">
+        <i class="fa-solid fa-cloud-bolt"></i>
+      </div>
+      
+      <h2 class="landing-title">Zoho CRM</h2>
+      <p class="landing-card-desc">
+        Sync leads, contacts, and customer profiles via Zoho Accounts OAuth 2.0 & <code>@zohocrm/nodejs-sdk-2.0</code>.
+      </p>
+
+      <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
+        <!-- Zoho Connected State -->
+        <div class="landing-status-box connected">
+          <div class="status-indicator">
+            <span class="pulse-dot"></span>
+          </div>
+          <div class="status-details">
+            <div class="status-label">Zoho CRM Connected</div>
+            <div class="status-org">
+              Organization: <strong><%= zohoStatus.organization ? zohoStatus.organization.companyName : 'Connected Account' %></strong>
+            </div>
+            <div class="status-meta">
+              Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; API: <span>/api/zoho</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="landing-actions-stacked">
+          <form action="/api/zoho/sync" method="POST" style="margin: 0; width: 100%;">
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+              <i class="fa-solid fa-arrows-rotate"></i>
+              <span>Sync CRM Contacts</span>
+            </button>
+          </form>
+          <form action="/api/zoho/disconnect" method="POST" style="margin: 0; width: 100%;">
+            <button type="submit" class="btn btn-secondary" style="width: 100%;">
+              <i class="fa-solid fa-plug-circle-xmark"></i>
+              <span>Disconnect Zoho</span>
+            </button>
+          </form>
+        </div>
+      <% } else { %>
+        <!-- Zoho Disconnected State -->
+        <div class="landing-status-box disconnected">
+          <div class="status-indicator">
+            <span class="pulse-dot grey"></span>
+          </div>
+          <div class="status-details">
+            <div class="status-label">Status: Not Connected</div>
+            <div class="status-meta">
+              API Base: <code>/api/zoho</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="landing-actions">
+          <a href="/api/zoho/connect" class="btn btn-zoho btn-lg" style="width: 100%;">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i>
+            <span>Connect Zoho CRM</span>
+          </a>
+        </div>
+      <% } %>
+    </div>
+
+    <!-- 2. GOOGLE CALENDAR INTEGRATION CARD -->
+    <div class="landing-card integration-card calendar-card">
+      <div class="landing-icon-wrap calendar-icon">
+        <i class="fa-solid fa-calendar-check"></i>
+      </div>
+      
+      <h2 class="landing-title">Google Calendar</h2>
+      <p class="landing-card-desc">
+        Automatically create, update, and manage Google Calendar events for all meeting room reservations.
+      </p>
+
+      <% if (typeof calendarStatus !== 'undefined' && calendarStatus && calendarStatus.connected) { %>
+        <!-- Google Calendar Connected State -->
+        <div class="landing-status-box connected">
+          <div class="status-indicator">
+            <span class="pulse-dot green"></span>
+          </div>
+          <div class="status-details">
+            <div class="status-label">Google Calendar Connected</div>
+            <div class="status-org">
+              Account: <strong><%= calendarStatus.userEmail || 'Active Calendar User' %></strong>
+            </div>
+            <div class="status-meta">
+              API: <span>/api/calendar</span> &bull; Provider: <span>Google Calendar v3</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="landing-actions-stacked">
+          <form action="/api/calendar/sync" method="POST" style="margin: 0; width: 100%;">
+            <button type="submit" class="btn btn-primary" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); border-color: #10b981;">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              <span>Sync All Bookings to Calendar</span>
+            </button>
+          </form>
+          <form action="/api/calendar/disconnect" method="POST" style="margin: 0; width: 100%;">
+            <button type="submit" class="btn btn-secondary" style="width: 100%;">
+              <i class="fa-solid fa-plug-circle-xmark"></i>
+              <span>Disconnect Calendar</span>
+            </button>
+          </form>
+        </div>
+      <% } else { %>
+        <!-- Google Calendar Disconnected State -->
+        <div class="landing-status-box disconnected">
+          <div class="status-indicator">
+            <span class="pulse-dot grey"></span>
+          </div>
+          <div class="status-details">
+            <div class="status-label">Status: Not Connected</div>
+            <div class="status-meta">
+              API Base: <code>/api/calendar</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="landing-actions">
+          <a href="/api/calendar/connect" class="btn btn-calendar btn-lg" style="width: 100%;">
+            <i class="fa-brands fa-google"></i>
+            <span>Connect Google Calendar</span>
+          </a>
+        </div>
+      <% } %>
+    </div>
+
+  </div>
+
+  <!-- Quick Navigation / System Overview Actions -->
+  <div class="quick-nav-panel">
+    <div class="quick-nav-header">
+      <h3>Quick System Access</h3>
+      <p>Manage meeting room bookings, slot reservations, and customer directories.</p>
+    </div>
+    <div class="quick-nav-buttons">
+      <a href="/book" class="btn btn-primary btn-lg">
+        <i class="fa-solid fa-calendar-plus"></i>
+        <span>Book a Meeting Room</span>
+      </a>
+      <a href="/bookings" class="btn btn-secondary btn-lg">
+        <i class="fa-solid fa-list-check"></i>
+        <span>View Reservations</span>
+      </a>
+      <a href="/api/health" target="_blank" class="btn btn-secondary btn-lg">
+        <i class="fa-solid fa-heart-pulse"></i>
+        <span>API Health</span>
+      </a>
+    </div>
+  </div>
+
 </div>
 
 <style>
   .landing-container {
-    min-height: calc(80vh - 120px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem 1rem;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem;
   }
 
-  .landing-card {
+  .page-intro-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+
+  .landing-main-title {
+    font-size: 2.3rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    color: #ffffff;
+    margin-bottom: 0.6rem;
+  }
+
+  .landing-subtitle {
+    font-size: 1.05rem;
+    color: var(--text-muted);
+    max-width: 620px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  .integrations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 1.75rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .integration-card {
     background: linear-gradient(145deg, rgba(22, 30, 48, 0.9), rgba(15, 20, 32, 0.95));
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 20px;
-    padding: 3rem 2.5rem;
-    max-width: 580px;
-    width: 100%;
+    padding: 2.5rem 2rem;
     text-align: center;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(16px);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
 
   .landing-icon-wrap {
     width: 64px;
     height: 64px;
-    margin: 0 auto 1.5rem;
+    margin: 0 auto 1.25rem;
     border-radius: 16px;
-    background: linear-gradient(135deg, #ea4335, #ff5722);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 1.8rem;
     color: #fff;
+  }
+
+  .zoho-icon {
+    background: linear-gradient(135deg, #ea4335, #ff5722);
     box-shadow: 0 8px 24px rgba(234, 67, 53, 0.4);
   }
 
+  .calendar-icon {
+    background: linear-gradient(135deg, #4285f4, #1a73e8);
+    box-shadow: 0 8px 24px rgba(66, 133, 244, 0.4);
+  }
+
   .landing-title {
-    font-size: 1.85rem;
+    font-size: 1.65rem;
     font-weight: 800;
-    letter-spacing: -0.02em;
     color: #ffffff;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
   }
 
-  .landing-subtitle {
-    font-size: 0.98rem;
+  .landing-card-desc {
+    font-size: 0.92rem;
     color: var(--text-muted);
-    line-height: 1.6;
-    margin-bottom: 2rem;
+    line-height: 1.55;
+    margin-bottom: 1.75rem;
+    min-height: 48px;
   }
 
-  .landing-subtitle code {
+  .landing-card-desc code {
     background: rgba(255, 255, 255, 0.08);
-    padding: 0.2rem 0.45rem;
+    padding: 0.15rem 0.4rem;
     border-radius: 4px;
     color: var(--primary-400);
-    font-size: 0.88rem;
+    font-size: 0.85rem;
   }
 
   .landing-status-box {
@@ -123,9 +265,9 @@
     align-items: center;
     text-align: left;
     gap: 1rem;
-    padding: 1.15rem 1.35rem;
+    padding: 1rem 1.25rem;
     border-radius: 14px;
-    margin-bottom: 2rem;
+    margin-bottom: 1.75rem;
     background: rgba(18, 24, 38, 0.75);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -142,20 +284,26 @@
 
   .status-label {
     font-weight: 700;
-    font-size: 0.98rem;
+    font-size: 0.95rem;
     color: #ffffff;
   }
 
   .status-org {
-    font-size: 0.88rem;
+    font-size: 0.86rem;
     color: var(--text-muted);
-    margin-top: 0.2rem;
+    margin-top: 0.15rem;
   }
 
   .status-meta {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--text-dim);
-    margin-top: 0.25rem;
+    margin-top: 0.2rem;
+  }
+
+  .landing-actions-stacked {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .landing-actions {
@@ -165,10 +313,54 @@
     gap: 1rem;
   }
 
-  .btn-lg {
-    padding: 0.85rem 2rem;
-    font-size: 1.05rem;
-    border-radius: 12px;
+  .btn-calendar {
+    background: linear-gradient(135deg, #4285f4, #1a73e8);
+    color: #ffffff;
+    font-weight: 600;
+    border: none;
+    box-shadow: 0 4px 14px rgba(66, 133, 244, 0.4);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    transition: all 0.2s ease;
+  }
+
+  .btn-calendar:hover {
+    box-shadow: 0 6px 20px rgba(66, 133, 244, 0.6);
+    transform: translateY(-2px);
+    color: #fff;
+  }
+
+  .quick-nav-panel {
+    background: rgba(22, 30, 48, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    padding: 1.75rem 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }
+
+  .quick-nav-header h3 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 0.25rem;
+  }
+
+  .quick-nav-header p {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .quick-nav-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
 </style>
 

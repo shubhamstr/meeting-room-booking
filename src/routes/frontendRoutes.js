@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { bookingService } from '../services/bookingService.js';
+import { googleCalendarService } from '../services/googleCalendarService.js';
 import { getTodayDateString } from '../data/mockData.js';
 
 const router = Router();
@@ -9,7 +10,7 @@ router.get('/', (req, res) => {
   res.redirect('/customers');
 });
 
-// 1. Customer Directory & Search View
+// 1. Customer Directory & Integration View
 router.get('/customers', (req, res) => {
   const searchQuery = req.query.search || '';
   const customers = bookingService.getCustomers(searchQuery);
@@ -21,11 +22,12 @@ router.get('/customers', (req, res) => {
     stats,
     selectedCustomer: null,
     successMessage: req.query.success || null,
-    errorMessage: req.query.error || null
+    errorMessage: req.query.error || null,
+    infoMessage: req.query.info || null
   });
 });
 
-// Quick-Add Customer
+// Quick-Add Customer Profile
 router.post('/customers/new', (req, res) => {
   try {
     const { name, email, company, department, phone } = req.body;
@@ -34,7 +36,7 @@ router.post('/customers/new', (req, res) => {
     }
 
     const newCust = bookingService.addCustomer({ name, email, company, department, phone });
-    // Immediately navigate to booking room for this newly created customer!
+    // Navigate to booking room for this newly created customer
     res.redirect(`/book?customerId=${newCust.id}&success=Customer+profile+created+successfully.+Pick+a+room+to+proceed.`);
   } catch (err) {
     res.redirect(`/customers?error=${encodeURIComponent(err.message)}`);
@@ -47,7 +49,6 @@ router.get('/book', (req, res) => {
   const customers = bookingService.getCustomers();
 
   if (!customerId && customers.length > 0) {
-    // If no customer chosen yet, redirect to customer directory first as requested
     return res.redirect('/customers?info=Please+select+a+customer+first+to+book+a+room.');
   }
 
@@ -73,8 +74,8 @@ router.get('/book', (req, res) => {
   });
 });
 
-// Handle Booking Submission
-router.post('/book', (req, res) => {
+// Handle Booking Form Submission
+router.post('/book', async (req, res) => {
   try {
     const { customerId, roomId, date, slotId, title, attendees, notes } = req.body;
 
@@ -92,7 +93,21 @@ router.post('/book', (req, res) => {
       notes
     });
 
-    res.redirect(`/bookings?success=Meeting+room+booked+successfully!+Booking+Ref:+${newBooking.id}`);
+    // Auto sync to Google Calendar if connected
+    let calendarSuccessNotice = '';
+    if (googleCalendarService.isConnected()) {
+      try {
+        const event = await googleCalendarService.createCalendarEvent(newBooking);
+        if (event && event.id) {
+          bookingService.updateBooking(newBooking.id, { googleEventId: event.id });
+          calendarSuccessNotice = '+Event+synced+to+Google+Calendar!';
+        }
+      } catch (calErr) {
+        console.warn('Google Calendar sync notice:', calErr.message);
+      }
+    }
+
+    res.redirect(`/bookings?success=Meeting+room+booked+successfully!+Booking+Ref:+${newBooking.id}${calendarSuccessNotice}`);
   } catch (err) {
     const custId = req.body.customerId || '';
     const rId = req.body.roomId || '';
@@ -117,39 +132,24 @@ router.get('/bookings', (req, res) => {
 });
 
 // Cancel a Booking
-router.post('/bookings/:id/cancel', (req, res) => {
+router.post('/bookings/:id/cancel', async (req, res) => {
   try {
     const { id } = req.params;
+    const booking = bookingService.getBookings().find(b => b.id === id);
+
+    if (booking && booking.googleEventId && googleCalendarService.isConnected()) {
+      try {
+        await googleCalendarService.deleteCalendarEvent(booking.googleEventId);
+      } catch (e) {
+        console.warn('Could not delete calendar event:', e.message);
+      }
+    }
+
     bookingService.cancelBooking(id);
     res.redirect(`/bookings?success=Booking+${id}+has+been+cancelled.`);
   } catch (err) {
     res.redirect(`/bookings?error=${encodeURIComponent(err.message)}`);
   }
-});
-
-// 4. API Endpoints for dynamic client-side fetches
-router.get('/api/slots', (req, res) => {
-  const { roomId, date } = req.query;
-  if (!roomId) {
-    return res.status(400).json({ error: 'Room ID is required' });
-  }
-  const slots = bookingService.getSlotsWithAvailability(roomId, date);
-  res.json({ slots });
-});
-
-router.get('/api/customers', (req, res) => {
-  const searchQuery = req.query.search || '';
-  const customers = bookingService.getCustomers(searchQuery);
-  res.json({ customers });
-});
-
-// Health check route
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'UP',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
 });
 
 export default router;
