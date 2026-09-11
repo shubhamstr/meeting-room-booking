@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof title !== 'undefined' ? title + ' | TurboSpace' : 'TurboSpace - Meeting Room Booking' %></title>
+  <meta name="description" content="Modern meeting room booking system with dynamic slot picker and customer management">
+  
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons for aesthetics -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <nav class="navbar" id="main-nav">
+    <div class="nav-container">
+      <a href="/customers" class="brand">
+        <div class="brand-icon">
+          <i class="fa-solid fa-cube"></i>
+        </div>
+        <div>
+          <span class="brand-title">TurboSpace</span>
+          <span class="brand-tag">EJS Engine</span>
+        </div>
+      </a>
+
+      <div class="nav-links">
+        <a href="/customers" class="nav-link <%= activeTab === 'customers' ? 'active' : '' %>">
+          <i class="fa-solid fa-users"></i>
+          <span>Customers</span>
+        </a>
+        <a href="/book<%= selectedCustomer ? '?customerId=' + selectedCustomer.id : '' %>" class="nav-link <%= activeTab === 'book' ? 'active' : '' %>">
+          <i class="fa-solid fa-calendar-plus"></i>
+          <span>Book Room</span>
+        </a>
+        <a href="/bookings" class="nav-link <%= activeTab === 'bookings' ? 'active' : '' %>">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          <span>All Bookings</span>
+        </a>
+      </div>
+
+      <% if (selectedCustomer) { %>
+        <a href="/customers" class="nav-active-customer" title="Click to switch customer">
+          <img src="<%= selectedCustomer.avatar %>" alt="<%= selectedCustomer.name %>" class="nav-cust-avatar" onerror="this.src='https://ui-avatars.com/api/?name=<%= encodeURIComponent(selectedCustomer.name) %>&background=6366f1&color=fff'">
+          <div class="nav-cust-info">
+            <span class="nav-cust-name"><%= selectedCustomer.name %></span>
+            <span class="nav-cust-label"><%= selectedCustomer.company %> &bull; Switch</span>
+          </div>
+        </a>
+      <% } else { %>
+        <a href="/customers" class="btn btn-secondary btn-sm">
+          <i class="fa-solid fa-user-check"></i>
+          <span>Select Customer</span>
+        </a>
+      <% } %>
+    </div>
+  </nav>
+
+  <!-- Alert / Flash notification banner if any -->
+  <main class="main-wrapper">
+    <% if (typeof successMessage !== 'undefined' && successMessage) { %>
+      <div class="alert-banner success" id="flash-success">
+        <i class="fa-solid fa-circle-check"></i>
+        <span><%= successMessage %></span>
+      </div>
+    <% } %>
+
+    <% if (typeof errorMessage !== 'undefined' && errorMessage) { %>
+      <div class="alert-banner error" id="flash-error">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span><%= errorMessage %></span>
+      </div>
+    <% } %>

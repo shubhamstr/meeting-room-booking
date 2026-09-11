@@ -1,0 +1,162 @@
+<%- include('layout/header', { title: 'All Bookings', activeTab: 'bookings', selectedCustomer: selectedCustomer, successMessage: successMessage, errorMessage: errorMessage }) %>
+
+<div class="page-header">
+  <div class="page-title-row">
+    <div>
+      <h1 class="page-title">
+        <i class="fa-solid fa-list-check" style="color: var(--primary-400);"></i>
+        Meeting Room Bookings
+      </h1>
+      <p class="page-subtitle">
+        Overview of all scheduled and active reservations, slot allocations, and customer meeting sessions.
+      </p>
+    </div>
+    <div>
+      <a href="/customers" class="btn btn-primary">
+        <i class="fa-solid fa-plus"></i>
+        <span>New Booking</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Search & Filter Controls -->
+<form action="/bookings" method="GET" class="search-filter-box">
+  <div class="search-input-group">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <input 
+      type="text" 
+      name="search" 
+      class="search-input" 
+      placeholder="Search by meeting title, customer, room, or booking ID..." 
+      value="<%= filters.search || '' %>"
+    >
+  </div>
+
+  <div class="filter-group">
+    <select name="roomId" class="select-control" onchange="this.form.submit()">
+      <option value="">All Meeting Rooms</option>
+      <% rooms.forEach(room => { %>
+        <option value="<%= room.id %>" <%= filters.roomId === room.id ? 'selected' : '' %>>
+          <%= room.name %>
+        </option>
+      <% }) %>
+    </select>
+
+    <select name="status" class="select-control" onchange="this.form.submit()">
+      <option value="">All Statuses</option>
+      <option value="Confirmed" <%= filters.status === 'Confirmed' ? 'selected' : '' %>>Confirmed</option>
+      <option value="Cancelled" <%= filters.status === 'Cancelled' ? 'selected' : '' %>>Cancelled</option>
+    </select>
+
+    <% if (filters.search || filters.roomId || filters.status) { %>
+      <a href="/bookings" class="btn btn-secondary btn-sm" title="Clear Filters">
+        <i class="fa-solid fa-filter-circle-xmark"></i> Clear
+      </a>
+    <% } %>
+  </div>
+</form>
+
+<!-- Bookings Table Container -->
+<div class="bookings-table-container">
+  <% if (bookings && bookings.length > 0) { %>
+    <table class="bookings-table">
+      <thead>
+        <tr>
+          <th>Booking Ref</th>
+          <th>Meeting Title</th>
+          <th>Customer</th>
+          <th>Room &amp; Space</th>
+          <th>Date &amp; Slot</th>
+          <th>Total</th>
+          <th>Status</th>
+          <th style="text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% bookings.forEach(booking => { %>
+          <tr>
+            <td>
+              <span style="font-family: monospace; font-weight: 700; color: var(--primary-400); background: rgba(99,102,241,0.12); padding: 0.2rem 0.5rem; border-radius: 6px;">
+                <%= booking.id %>
+              </span>
+            </td>
+            <td>
+              <div style="font-weight: 700; color: #fff; margin-bottom: 0.15rem;">
+                <%= booking.title %>
+              </div>
+              <div style="font-size: 0.78rem; color: var(--text-dim);">
+                <i class="fa-solid fa-users" style="margin-right: 0.25rem;"></i> <%= booking.attendees %> Attendees
+                <% if (booking.notes) { %>
+                  &bull; <span title="<%= booking.notes %>"><i class="fa-solid fa-note-sticky"></i> Note attached</span>
+                <% } %>
+              </div>
+            </td>
+            <td>
+              <div style="font-weight: 600; color: #fff;">
+                <%= booking.customerName %>
+              </div>
+              <div style="font-size: 0.78rem; color: var(--text-muted);">
+                <%= booking.customerCompany %>
+              </div>
+            </td>
+            <td>
+              <div style="font-weight: 600; color: var(--accent-cyan);">
+                <%= booking.roomName %>
+              </div>
+            </td>
+            <td>
+              <div style="font-weight: 600; color: #fff;">
+                <i class="fa-regular fa-calendar" style="color: var(--primary-400); margin-right: 0.3rem;"></i>
+                <%= booking.date %>
+              </div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
+                <i class="fa-regular fa-clock" style="margin-right: 0.3rem;"></i>
+                <%= booking.slotLabel %>
+              </div>
+            </td>
+            <td>
+              <span style="font-weight: 700; color: var(--accent-emerald); font-size: 0.95rem;">
+                $<%= booking.totalCost %>
+              </span>
+            </td>
+            <td>
+              <% if (booking.status === 'Confirmed') { %>
+                <span class="status-badge confirmed">
+                  <i class="fa-solid fa-circle-check"></i> Confirmed
+                </span>
+              <% } else { %>
+                <span class="status-badge cancelled">
+                  <i class="fa-solid fa-ban"></i> Cancelled
+                </span>
+              <% } %>
+            </td>
+            <td style="text-align: right;">
+              <% if (booking.status === 'Confirmed') { %>
+                <form action="/bookings/<%= booking.id %>/cancel" method="POST" onsubmit="return confirm('Are you sure you want to cancel booking <%= booking.id %> for <%= booking.customerName %>?');" style="display: inline;">
+                  <button type="submit" class="btn btn-danger-outline" title="Cancel Booking">
+                    <i class="fa-solid fa-xmark"></i> Cancel
+                  </button>
+                </form>
+              <% } else { %>
+                <span style="font-size: 0.8rem; color: var(--text-dim); font-style: italic;">Inactive</span>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } else { %>
+    <div class="empty-state">
+      <div class="empty-state-icon">
+        <i class="fa-solid fa-calendar-xmark"></i>
+      </div>
+      <p class="empty-state-text">No meeting bookings found for the selected filters.</p>
+      <a href="/customers" class="btn btn-primary btn-sm">
+        <i class="fa-solid fa-calendar-plus"></i> Book a Room Now
+      </a>
+    </div>
+  <% } %>
+</div>
+
+<%- include('layout/footer') %>

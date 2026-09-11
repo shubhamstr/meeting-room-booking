@@ -1,0 +1,282 @@
+<%- include('layout/header', { title: 'Book a Meeting Room', activeTab: 'book', selectedCustomer: customer, successMessage: successMessage, errorMessage: errorMessage }) %>
+
+<!-- Selected Customer Header Banner -->
+<div class="selected-customer-banner">
+  <div class="banner-user-info">
+    <img 
+      src="<%= customer.avatar %>" 
+      alt="<%= customer.name %>" 
+      class="banner-avatar"
+      onerror="this.src='https://ui-avatars.com/api/?name=<%= encodeURIComponent(customer.name) %>&background=6366f1&color=fff'"
+    >
+    <div class="banner-user-text">
+      <h3>
+        <span><%= customer.name %></span>
+        <span style="font-size: 0.75rem; background: rgba(99,102,241,0.25); color: var(--primary-200); padding: 0.15rem 0.5rem; border-radius: 99px;">
+          Active Customer
+        </span>
+      </h3>
+      <p>
+        <i class="fa-solid fa-building" style="margin-right: 0.3rem;"></i><%= customer.company %> &bull; 
+        <i class="fa-solid fa-sitemap" style="margin-left: 0.3rem; margin-right: 0.3rem;"></i><%= customer.department %> &bull; 
+        <i class="fa-regular fa-envelope" style="margin-left: 0.3rem; margin-right: 0.3rem;"></i><%= customer.email %>
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <a href="/customers" class="btn btn-secondary btn-sm">
+      <i class="fa-solid fa-arrow-right-arrow-left"></i>
+      <span>Change Customer</span>
+    </a>
+  </div>
+</div>
+
+<form action="/book" method="POST" id="booking-form">
+  <input type="hidden" name="customerId" value="<%= customer.id %>">
+  <input type="hidden" name="roomId" id="selected-room-id" value="<%= selectedRoom ? selectedRoom.id : rooms[0].id %>">
+  <input type="hidden" name="slotId" id="selected-slot-id" value="">
+
+  <div class="booking-layout-grid">
+    <!-- Left Column: Steps -->
+    <div class="booking-steps-column">
+      
+      <!-- STEP 1: Select Room -->
+      <section class="step-section">
+        <div class="step-header">
+          <div class="step-number">1</div>
+          <div>
+            <h2 class="step-title">Select Meeting Space</h2>
+            <p class="step-desc">Pick an executive boardroom, collaboration space, or focus pod suited for your session.</p>
+          </div>
+        </div>
+
+        <div class="rooms-picker-grid">
+          <% rooms.forEach((room, index) => { %>
+            <div 
+              class="room-radio-card <%= (selectedRoom && selectedRoom.id === room.id) || (!selectedRoom && index === 0) ? 'selected' : '' %>"
+              data-room-id="<%= room.id %>"
+              data-room-name="<%= room.name %>"
+              data-room-rate="<%= room.hourlyRate %>"
+              data-room-capacity="<%= room.capacity %>"
+            >
+              <input 
+                type="radio" 
+                name="roomRadio" 
+                value="<%= room.id %>" 
+                <%= (selectedRoom && selectedRoom.id === room.id) || (!selectedRoom && index === 0) ? 'checked' : '' %>
+              >
+              <div class="room-card-img-wrap">
+                <img src="<%= room.image %>" alt="<%= room.name %>" class="room-card-img">
+                <span class="room-rate-badge">$<%= room.hourlyRate %>/hr</span>
+                <span class="room-type-tag"><%= room.type %></span>
+              </div>
+
+              <div class="room-card-body">
+                <h4 class="room-card-title"><%= room.name %></h4>
+                <div class="room-meta-row">
+                  <span><i class="fa-solid fa-users" style="color: var(--primary-400);"></i> Up to <%= room.capacity %> seats</span>
+                  <span><i class="fa-solid fa-location-dot" style="color: var(--accent-cyan);"></i> <%= room.floor %></span>
+                </div>
+                
+                <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                  <%= room.description %>
+                </p>
+
+                <div class="amenities-chip-list">
+                  <% room.amenities.slice(0, 3).forEach(amenity => { %>
+                    <span class="amenity-chip"><i class="fa-solid fa-check" style="color: var(--accent-emerald); font-size: 0.65rem;"></i> <%= amenity %></span>
+                  <% }) %>
+                  <% if (room.amenities.length > 3) { %>
+                    <span class="amenity-chip">+<%= room.amenities.length - 3 %> more</span>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+
+      <!-- STEP 2: Pick Date & Time Slot -->
+      <section class="step-section">
+        <div class="step-header">
+          <div class="step-number">2</div>
+          <div>
+            <h2 class="step-title">Select Date &amp; Time Slot</h2>
+            <p class="step-desc">Pick an available hourly time window for the selected room.</p>
+          </div>
+        </div>
+
+        <div class="date-selector-row">
+          <label for="booking-date-input" style="font-weight: 600; font-size: 0.9rem; color: #fff;">
+            <i class="fa-regular fa-calendar-days" style="color: var(--primary-400); margin-right: 0.4rem;"></i>
+            Meeting Date:
+          </label>
+          <input 
+            type="date" 
+            id="booking-date-input" 
+            name="date" 
+            class="date-input-field" 
+            value="<%= selectedDate %>"
+            min="<%= selectedDate %>"
+            required
+          >
+          <span style="font-size: 0.8rem; color: var(--text-dim);">Real-time availability updates on date change</span>
+        </div>
+
+        <div class="slots-grid" id="slots-grid-container">
+          <% slots.forEach(slot => { %>
+            <label 
+              class="slot-chip <%= slot.isAvailable ? 'available' : 'booked' %>" 
+              data-slot-id="<%= slot.id %>"
+              data-slot-label="<%= slot.label %>"
+            >
+              <input 
+                type="radio" 
+                name="slotIdRadio" 
+                value="<%= slot.id %>" 
+                <%= !slot.isAvailable ? 'disabled' : '' %>
+              >
+              <span class="slot-time"><%= slot.label %></span>
+              <span class="slot-status <%= slot.isAvailable ? 'available' : 'booked' %>">
+                <% if (slot.isAvailable) { %>
+                  <i class="fa-solid fa-circle" style="font-size: 0.5rem; margin-right: 0.2rem;"></i> Available
+                <% } else { %>
+                  <i class="fa-solid fa-lock" style="font-size: 0.65rem; margin-right: 0.2rem;"></i> Reserved (<%= slot.bookedBy || 'Booked' %>)
+                <% } %>
+              </span>
+            </label>
+          <% }) %>
+        </div>
+      </section>
+
+      <!-- STEP 3: Meeting Particulars -->
+      <section class="step-section">
+        <div class="step-header">
+          <div class="step-number">3</div>
+          <div>
+            <h2 class="step-title">Meeting Details &amp; Notes</h2>
+            <p class="step-desc">Specify the meeting title, expected head count, and special requests.</p>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="booking-title">Meeting Title / Purpose *</label>
+          <input 
+            type="text" 
+            id="booking-title" 
+            name="title" 
+            class="form-input" 
+            placeholder="e.g. Q4 Financial Strategy &amp; KPI Review" 
+            required
+          >
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="booking-attendees">Number of Attendees</label>
+            <input 
+              type="number" 
+              id="booking-attendees" 
+              name="attendees" 
+              class="form-input" 
+              value="4" 
+              min="1" 
+              max="50"
+            >
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="booking-phone">Organizer Contact</label>
+            <input 
+              type="text" 
+              id="booking-phone" 
+              class="form-input" 
+              value="<%= customer.phone %>" 
+              readonly 
+              style="opacity: 0.7;"
+            >
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="booking-notes">Special Requirements / Equipment Setup</label>
+          <textarea 
+            id="booking-notes" 
+            name="notes" 
+            rows="3" 
+            class="form-textarea" 
+            placeholder="e.g. Video conference test required 10 mins prior, additional whiteboard markers, catering."
+          ></textarea>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Sticky Summary Box -->
+    <aside class="booking-summary-column">
+      <div class="booking-summary-card">
+        <h3 class="summary-title">
+          <i class="fa-solid fa-receipt" style="color: var(--primary-400); margin-right: 0.4rem;"></i>
+          Booking Summary
+        </h3>
+
+        <div class="summary-item-row">
+          <span>Customer</span>
+          <strong><%= customer.name %></strong>
+        </div>
+
+        <div class="summary-item-row">
+          <span>Organization</span>
+          <strong><%= customer.company %></strong>
+        </div>
+
+        <div class="summary-divider"></div>
+
+        <div class="summary-item-row">
+          <span>Selected Space</span>
+          <strong id="summary-room-name"><%= selectedRoom ? selectedRoom.name : rooms[0].name %></strong>
+        </div>
+
+        <div class="summary-item-row">
+          <span>Hourly Rate</span>
+          <strong id="summary-room-rate">$<%= selectedRoom ? selectedRoom.hourlyRate : rooms[0].hourlyRate %> / hr</strong>
+        </div>
+
+        <div class="summary-item-row">
+          <span>Scheduled Date</span>
+          <strong id="summary-date"><%= selectedDate %></strong>
+        </div>
+
+        <div class="summary-item-row">
+          <span>Reserved Slot</span>
+          <strong id="summary-slot" style="color: var(--accent-cyan);">Please select slot</strong>
+        </div>
+
+        <div class="summary-divider"></div>
+
+        <div class="summary-total-row">
+          <span>Total Estimate</span>
+          <span class="summary-total-price" id="summary-total">$<%= selectedRoom ? selectedRoom.hourlyRate : rooms[0].hourlyRate %></span>
+        </div>
+
+        <button 
+          type="submit" 
+          id="submit-booking-btn" 
+          class="btn btn-primary btn-lg" 
+          style="width: 100%; margin-top: 0.5rem; opacity: 0.5; cursor: not-allowed;" 
+          disabled
+        >
+          <i class="fa-solid fa-calendar-check"></i>
+          <span>Confirm &amp; Book Room</span>
+        </button>
+
+        <p style="font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: 0.25rem;">
+          <i class="fa-solid fa-shield-halved" style="margin-right: 0.25rem;"></i>
+          Instant confirmation with automatic conflict protection.
+        </p>
+      </div>
+    </aside>
+  </div>
+</form>
+
+<%- include('layout/footer') %>
