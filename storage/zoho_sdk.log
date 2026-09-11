@@ -208,3 +208,68 @@
   level: 'info',
   timestamp: '2026-09-11 13:46:17'
 }
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:46:19'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:50:48'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:51:15'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:51:25'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:51:33'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:51:43'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:51:52'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:51:59'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:52:06'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:52:48'
+}
+{
+  message: 'Initialization successful for Email Id : shubhamsutar5799@gmail.com in Environment : https://www.zohoapis.com.',
+  level: 'info',
+  timestamp: '2026-09-11 13:53:02'
+}
+{
+  message: `REQUEST-METHOD = GET , URL = https://www.zohoapis.com/crm/v2/Contacts , HEADERS = [["Authorization"," ## can't disclose ## "],["X-ZOHO-SDK","win32/10.0.26200/nodejs-2.0/v22.16.0:6.1.0"]] , PARAMS = [].`,
+  level: 'info',
+  timestamp: '2026-09-11 13:55:11'
+}
+{
+  message: `REQUEST-METHOD = GET , URL = https://www.zohoapis.com/crm/v2/Leads , HEADERS = [["Authorization"," ## can't disclose ## "],["X-ZOHO-SDK","win32/10.0.26200/nodejs-2.0/v22.16.0:6.1.0"]] , PARAMS = [].`,
+  level: 'info',
+  timestamp: '2026-09-11 13:55:13'
+}

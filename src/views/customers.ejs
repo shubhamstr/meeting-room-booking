@@ -1,14 +1,15 @@
-<%- include('layout/header', { title: 'Integrations & Services Hub', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage }) %>
+<%- include('layout/header', { title: 'Integrations & Services Hub', activeTab: 'customers', selectedCustomer: null, successMessage: successMessage, errorMessage: errorMessage, infoMessage: infoMessage }) %>
 
 <div class="landing-container">
   
   <div class="page-intro-header">
     <h1 class="landing-main-title">Integrations & API Management</h1>
     <p class="landing-subtitle">
-      Connect your CRM and Calendar accounts to automate meeting room reservations across systems.
+      Connect your CRM and Calendar accounts to automate meeting room reservations across PostgreSQL and external clouds.
     </p>
   </div>
 
+  <!-- Integrations Grid -->
   <div class="integrations-grid">
 
     <!-- 1. ZOHO CRM INTEGRATION CARD -->
@@ -19,7 +20,7 @@
       
       <h2 class="landing-title">Zoho CRM</h2>
       <p class="landing-card-desc">
-        Sync leads, contacts, and customer profiles via Zoho Accounts OAuth 2.0 & <code>@zohocrm/nodejs-sdk-2.0</code>.
+        Sync leads, contacts, and customer profiles directly into PostgreSQL via Zoho OAuth 2.0 & <code>@zohocrm/nodejs-sdk-2.0</code>.
       </p>
 
       <% if (typeof zohoStatus !== 'undefined' && zohoStatus && zohoStatus.connected) { %>
@@ -34,7 +35,7 @@
               Organization: <strong><%= zohoStatus.organization ? zohoStatus.organization.companyName : 'Connected Account' %></strong>
             </div>
             <div class="status-meta">
-              Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; API: <span>POST /api/zoho/sync</span>
+              Data Center: <span><%= zohoStatus.dataCenter %></span> &bull; Target: <span>PostgreSQL DB</span>
               <% if (zohoStatus.lastSyncedAt) { %>
                 <br><small style="color: #6ee7b7;"><i class="fa-solid fa-clock-rotate-left"></i> Last Synced: <%= new Date(zohoStatus.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) %></small>
               <% } %>
@@ -46,7 +47,7 @@
           <form action="/api/zoho/sync" method="POST" id="zoho-sync-form" style="margin: 0; width: 100%;">
             <button type="submit" id="zoho-sync-btn" class="btn btn-primary" style="width: 100%;">
               <i class="fa-solid fa-arrows-rotate"></i>
-              <span>Sync CRM Contacts</span>
+              <span>Sync CRM to PostgreSQL</span>
             </button>
           </form>
           <form action="/api/zoho/disconnect" method="POST" style="margin: 0; width: 100%;">
@@ -111,7 +112,7 @@
           <form action="/api/calendar/sync" method="POST" style="margin: 0; width: 100%;">
             <button type="submit" class="btn btn-primary" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); border-color: #10b981;">
               <i class="fa-solid fa-cloud-arrow-up"></i>
-              <span>Sync All Bookings to Calendar</span>
+              <span>Sync Confirmed Bookings</span>
             </button>
           </form>
           <form action="/api/calendar/disconnect" method="POST" style="margin: 0; width: 100%;">
@@ -146,11 +147,118 @@
 
   </div>
 
+  <!-- Synced Customers Directory (PostgreSQL Database) -->
+  <div class="customers-directory-section" style="margin-top: 3rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+      <div>
+        <h2 style="font-size: 1.6rem; font-weight: 800; color: #fff; margin: 0 0 0.3rem 0;">
+          <i class="fa-solid fa-database" style="color: var(--primary-400); margin-right: 0.5rem;"></i>
+          PostgreSQL Customer Directory
+        </h2>
+        <p style="font-size: 0.92rem; color: var(--text-muted); margin: 0;">
+          Persisted customers from Zoho CRM sync and direct registrations (<%= (typeof customers !== 'undefined' ? customers.length : 0) %> profiles in DB)
+        </p>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <div class="search-input-wrap" style="position: relative; min-width: 260px;">
+          <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-dim);"></i>
+          <input 
+            type="text" 
+            id="customer-search-input" 
+            placeholder="Search customers..." 
+            value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>"
+            style="width: 100%; padding: 0.7rem 1rem 0.7rem 2.4rem; background: rgba(18, 24, 38, 0.9); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; color: #fff; font-size: 0.9rem;"
+          >
+        </div>
+        <button class="btn btn-primary" data-open-modal="add-customer-modal">
+          <i class="fa-solid fa-user-plus"></i>
+          <span>Add Customer</span>
+        </button>
+      </div>
+    </div>
+
+    <% if (typeof customers !== 'undefined' && customers && customers.length > 0) { %>
+      <div class="customers-grid" id="customers-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem;">
+        <% customers.forEach(cust => { %>
+          <div 
+            class="customer-card" 
+            data-name="<%= cust.name %>" 
+            data-email="<%= cust.email %>" 
+            data-company="<%= cust.company %>" 
+            data-department="<%= cust.department %>"
+            style="background: linear-gradient(145deg, rgba(22, 30, 48, 0.85), rgba(15, 20, 32, 0.9)); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 1.4rem; display: flex; flex-direction: column; justify-content: space-between; gap: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.35);"
+          >
+            <div style="display: flex; gap: 1rem; align-items: flex-start;">
+              <div 
+                style="width: 48px; height: 48px; border-radius: 12px; background: <%= cust.badgeColor || '#6366f1' %>; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 1.1rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
+              >
+                <%= cust.initials || 'CU' %>
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem;">
+                  <h4 style="font-size: 1.05rem; font-weight: 700; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    <%= cust.name %>
+                  </h4>
+                  <span style="font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 6px; background: <%= cust.source && cust.source.includes('Zoho') ? 'rgba(234, 67, 53, 0.2)' : 'rgba(99, 102, 241, 0.2)' %>; color: <%= cust.source && cust.source.includes('Zoho') ? '#fca5a5' : '#a5b4fc' %>; border: 1px solid <%= cust.source && cust.source.includes('Zoho') ? 'rgba(234, 67, 53, 0.4)' : 'rgba(99, 102, 241, 0.4)' %>;">
+                    <%= cust.source || 'PostgreSQL' %>
+                  </span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  <i class="fa-solid fa-building" style="font-size: 0.75rem; margin-right: 0.3rem;"></i><%= cust.company %> &bull; <%= cust.department %>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  <i class="fa-regular fa-envelope" style="font-size: 0.75rem; margin-right: 0.3rem;"></i><%= cust.email %>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.85rem; font-size: 0.82rem;">
+              <span style="color: var(--text-muted);">
+                <i class="fa-solid fa-calendar-check" style="color: var(--accent-emerald); margin-right: 0.3rem;"></i>
+                <%= cust.bookingCount || 0 %> active <%= cust.bookingCount === 1 ? 'booking' : 'bookings' %>
+              </span>
+              <a href="/book?customerId=<%= cust.id %>" class="btn btn-primary btn-sm" style="padding: 0.35rem 0.85rem; font-size: 0.82rem;">
+                <span>Book Room</span>
+                <i class="fa-solid fa-arrow-right" style="font-size: 0.75rem;"></i>
+              </a>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <div id="no-customers-found" style="display: none; text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+        <i class="fa-solid fa-magnifying-glass" style="font-size: 2rem; margin-bottom: 0.75rem; opacity: 0.5;"></i>
+        <p>No customers match your search query.</p>
+      </div>
+    <% } else { %>
+      <!-- Clean Empty State (No Mock Data) -->
+      <div style="background: rgba(22, 30, 48, 0.5); border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 18px; padding: 3.5rem 2rem; text-align: center;">
+        <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(99, 102, 241, 0.15); color: var(--primary-400); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin: 0 auto 1.25rem;">
+          <i class="fa-solid fa-users"></i>
+        </div>
+        <h3 style="font-size: 1.3rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem;">No Customers in PostgreSQL Yet</h3>
+        <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 520px; margin: 0 auto 1.75rem; line-height: 1.6;">
+          All mock data has been removed. Connect your <strong>Zoho CRM</strong> account to sync live contacts and leads into PostgreSQL, or add a new customer manually.
+        </p>
+        <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-primary" data-open-modal="add-customer-modal">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>Add Customer Profile</span>
+          </button>
+          <a href="/api/zoho/connect" class="btn btn-zoho">
+            <i class="fa-solid fa-cloud-bolt"></i>
+            <span>Connect & Sync Zoho CRM</span>
+          </a>
+        </div>
+      </div>
+    <% } %>
+  </div>
+
   <!-- Quick Navigation / System Overview Actions -->
-  <div class="quick-nav-panel">
+  <div class="quick-nav-panel" style="margin-top: 3rem;">
     <div class="quick-nav-header">
       <h3>Quick System Access</h3>
-      <p>Manage meeting room bookings, slot reservations, and customer directories.</p>
+      <p>Manage meeting room bookings, slot reservations, and check PostgreSQL queues.</p>
     </div>
     <div class="quick-nav-buttons">
       <a href="/book" class="btn btn-primary btn-lg">
@@ -168,6 +276,46 @@
     </div>
   </div>
 
+</div>
+
+<!-- Modal: Add New Customer Profile -->
+<div class="modal-overlay" id="add-customer-modal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>Add Customer Profile</h3>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <form action="/customers/new" method="POST">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Full Name *</label>
+          <input type="text" name="name" class="form-input" placeholder="e.g. John Doe" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Work Email *</label>
+          <input type="email" name="email" class="form-input" placeholder="john.doe@company.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company / Organization *</label>
+          <input type="text" name="company" class="form-input" placeholder="Acme Corporation" required>
+        </div>
+        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Department</label>
+            <input type="text" name="department" class="form-input" placeholder="Engineering / Operations">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone Number</label>
+            <input type="text" name="phone" class="form-input" placeholder="+1 (555) 000-0000">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save to PostgreSQL & Proceed</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <style>
@@ -202,7 +350,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: 1.75rem;
-    margin-bottom: 2.5rem;
+    margin-bottom: 1.5rem;
   }
 
   .integration-card {

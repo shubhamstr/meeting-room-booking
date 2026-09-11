@@ -417,63 +417,71 @@ class ZohoCrmService {
       throw new Error('Zoho CRM is not connected.');
     }
 
+    let queueEntry = null;
+    try {
+      queueEntry = await bookingService.addToQueue('ZOHO_SYNC', { initiatedAt: new Date().toISOString() });
+    } catch (e) {
+      console.warn('[Zoho CRM] Note: Could not create queue entry:', e.message);
+    }
+
     let syncedCount = 0;
     const importedCustomers = [];
 
-    // Fetch Contacts
+    // 1. Fetch Contacts from Zoho CRM
     try {
       const contacts = await this.fetchRecords('Contacts');
       for (const contact of contacts) {
         const rawName = contact.Full_Name || `${contact.First_Name || ''} ${contact.Last_Name || ''}`.trim() || 'Zoho Contact';
         const fullName = typeof rawName === 'object' ? (rawName.name || 'Zoho Contact') : String(rawName);
-        const email = (typeof contact.Email === 'string' && contact.Email) ? contact.Email : `${contact.id || Date.now()}@zoho-contact.com`;
+        const email = (typeof contact.Email === 'string' && contact.Email) ? contact.Email.toLowerCase() : `${contact.id || Date.now()}@zoho-contact.com`;
         const company = (contact.Account_Name && contact.Account_Name.name) || (typeof contact.Department === 'string' ? contact.Department : 'Zoho CRM Client');
         const phone = (typeof contact.Phone === 'string' ? contact.Phone : '') || (typeof contact.Mobile === 'string' ? contact.Mobile : '') || '+1 (555) 019-2831';
         const department = typeof contact.Department === 'string' ? contact.Department : 'Corporate';
+        const zohoId = String(contact.id || '');
 
-        // Check if customer already exists in local list by email
-        const existing = bookingService.customers.find(c => c.email.toLowerCase() === email.toLowerCase());
-        if (!existing) {
-          const newCust = bookingService.addCustomer({
-            name: fullName,
-            email,
-            company,
-            department,
-            phone
-          });
-          newCust.source = 'Zoho CRM';
-          syncedCount++;
-          importedCustomers.push(newCust);
-        }
+        const cust = await bookingService.addCustomer({
+          id: zohoId ? `zoho-${zohoId}` : undefined,
+          zohoId: zohoId || null,
+          name: fullName,
+          email,
+          company,
+          department,
+          phone,
+          source: 'Zoho CRM Contact'
+        });
+
+        syncedCount++;
+        importedCustomers.push(cust);
       }
     } catch (err) {
       console.warn('[Zoho Sync] Contacts fetch note:', err.message);
     }
 
-    // Fetch Leads as well if needed
+    // 2. Fetch Leads from Zoho CRM
     try {
       const leads = await this.fetchRecords('Leads');
       for (const lead of leads) {
         const rawName = lead.Full_Name || `${lead.First_Name || ''} ${lead.Last_Name || ''}`.trim() || 'Zoho Lead';
         const fullName = typeof rawName === 'object' ? (rawName.name || 'Zoho Lead') : String(rawName);
-        const email = (typeof lead.Email === 'string' && lead.Email) ? lead.Email : `${lead.id || Date.now()}@zoho-lead.com`;
+        const email = (typeof lead.Email === 'string' && lead.Email) ? lead.Email.toLowerCase() : `${lead.id || Date.now()}@zoho-lead.com`;
         const company = typeof lead.Company === 'object' ? (lead.Company.name || 'Zoho Enterprise') : (lead.Company || 'Zoho Enterprise');
         const phone = (typeof lead.Phone === 'string' ? lead.Phone : '') || (typeof lead.Mobile === 'string' ? lead.Mobile : '') || '+1 (555) 018-9273';
         const department = typeof lead.Industry === 'object' ? (lead.Industry.name || lead.Industry.value || 'Prospect') : (lead.Industry || 'Prospect');
+        const zohoId = String(lead.id || '');
 
-        const existing = bookingService.customers.find(c => c.email.toLowerCase() === email.toLowerCase());
-        if (!existing) {
-          const newCust = bookingService.addCustomer({
-            name: fullName,
-            email,
-            company,
-            department,
-            phone
-          });
-          newCust.source = 'Zoho CRM Lead';
-          syncedCount++;
-          importedCustomers.push(newCust);
-        }
+        const cust = await bookingService.addCustomer({
+          id: zohoId ? `zoho-lead-${zohoId}` : undefined,
+          zohoId: zohoId || null,
+          name: fullName,
+          email,
+          company,
+          department,
+          phone,
+          source: 'Zoho CRM Lead'
+        });
+
+        syncedCount++;
+        importedCustomers.push(cust);
       }
     } catch (err) {
       console.warn('[Zoho Sync] Leads fetch note:', err.message);
@@ -485,9 +493,20 @@ class ZohoCrmService {
       this.savePersistedState(this.currentConnection);
     }
 
+    // Mark Queue task completed
+    if (queueEntry && queueEntry.id) {
+      try {
+        await bookingService.updateQueueStatus(queueEntry.id, 'COMPLETED');
+      } catch (e) {
+        console.warn('[Zoho CRM] Could not update queue status:', e.message);
+      }
+    }
+
+    const currentCustomers = await bookingService.getCustomers();
+
     return {
       syncedCount,
-      totalCustomers: bookingService.customers.length,
+      totalCustomers: currentCustomers.length,
       importedCustomers
     };
   }

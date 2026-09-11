@@ -1,6 +1,6 @@
 # Turbosoft API & Meeting Room Booking System
 
-A modern, high-performance Node.js and Express.js REST API and SSR web service built for meeting room reservations with external Zoho CRM customer synchronization and Google Calendar event management.
+A modern, high-performance Node.js and Express.js REST API and SSR web service built for meeting room reservations with PostgreSQL persistence, external Zoho CRM customer synchronization, and Google Calendar event management.
 
 ---
 
@@ -8,6 +8,7 @@ A modern, high-performance Node.js and Express.js REST API and SSR web service b
 
 - **Runtime:** [Node.js](https://nodejs.org/) (ES Modules / `"type": "module"`)
 - **Framework:** [Express.js](https://expressjs.com/) (v5)
+- **Database:** [PostgreSQL](https://www.postgresql.org/) with [`pg`](https://www.npmjs.com/package/pg) connection pool
 - **CRM Integration:** [@zohocrm/nodejs-sdk-2.0](https://www.npmjs.com/package/@zohocrm/nodejs-sdk-2.0)
 - **Calendar Integration:** Google Calendar API v3
 - **Templating Engine:** [EJS](https://ejs.co/)
@@ -20,6 +21,76 @@ A modern, high-performance Node.js and Express.js REST API and SSR web service b
 
 ---
 
+## 🗄️ PostgreSQL Database & Schema Architecture
+
+All mock data has been removed. Tables and indexes are defined directly in code in `src/config/db.js` and automatically checked/created upon server startup (`initDb()`):
+
+### 1. `customers` Table
+Stores live contacts and leads synced from Zoho CRM or added via API/UI.
+- `id` (VARCHAR PRIMARY KEY)
+- `zoho_id` (VARCHAR UNIQUE)
+- `name` (VARCHAR NOT NULL)
+- `email` (VARCHAR UNIQUE NOT NULL)
+- `phone` (VARCHAR)
+- `company` (VARCHAR)
+- `department` (VARCHAR)
+- `avatar` (TEXT)
+- `initials` (VARCHAR)
+- `badge_color` (VARCHAR)
+- `source` (VARCHAR)
+- `created_at` / `updated_at` (TIMESTAMPTZ)
+
+### 2. `rooms` Table
+Maintains physical meeting room inventory.
+- `id` (VARCHAR PRIMARY KEY)
+- `name` (VARCHAR NOT NULL)
+- `floor` (VARCHAR)
+- `capacity` (INT NOT NULL)
+- `hourly_rate` (NUMERIC NOT NULL)
+- `type` (VARCHAR)
+- `description` (TEXT)
+- `image` (TEXT)
+- `amenities` (JSONB)
+- `created_at` / `updated_at` (TIMESTAMPTZ)
+
+### 3. `time_slots` Table
+Predefined scheduling slots.
+- `id` (VARCHAR PRIMARY KEY, e.g. `09:00-10:00`)
+- `label` (VARCHAR NOT NULL)
+- `time` (VARCHAR NOT NULL)
+- `period` (VARCHAR NOT NULL)
+- `sort_order` (INT)
+
+### 4. `bookings` Table
+Persisted reservations linked with foreign keys to customers and rooms.
+- `id` (VARCHAR PRIMARY KEY, e.g. `BK-1001`)
+- `customer_id` (VARCHAR REFERENCES customers(id) ON DELETE CASCADE)
+- `room_id` (VARCHAR REFERENCES rooms(id) ON DELETE CASCADE)
+- `date` (VARCHAR NOT NULL)
+- `slot_id` (VARCHAR NOT NULL)
+- `slot_label` (VARCHAR NOT NULL)
+- `title` (VARCHAR NOT NULL)
+- `attendees` (INT DEFAULT 2)
+- `notes` (TEXT)
+- `total_cost` (NUMERIC NOT NULL)
+- `status` (VARCHAR DEFAULT 'Confirmed')
+- `google_event_id` (VARCHAR)
+- `created_at` / `updated_at` (TIMESTAMPTZ)
+
+### 5. `queues` Table
+Asynchronous job tracking for Zoho sync and external webhook tasks.
+- `id` (VARCHAR PRIMARY KEY)
+- `type` (VARCHAR NOT NULL, e.g. `ZOHO_SYNC`, `CALENDAR_SYNC`)
+- `payload` (JSONB NOT NULL DEFAULT '{}')
+- `status` (VARCHAR DEFAULT 'PENDING')
+- `attempts` (INT DEFAULT 0)
+- `max_attempts` (INT DEFAULT 3)
+- `error_message` (TEXT)
+- `processed_at` (TIMESTAMPTZ)
+- `created_at` / `updated_at` (TIMESTAMPTZ)
+
+---
+
 ## 📁 Architecture & Route Separation
 
 ```text
@@ -29,7 +100,8 @@ turbosoft/
 │   ├── zoho_connection.json
 │   └── zoho_sdk_tokens.txt
 ├── src/
-│   ├── data/                 # Seed data and mock database
+│   ├── config/
+│   │   └── db.js             # PostgreSQL Pool client, auto-migration & schema definition
 │   ├── middlewares/
 │   │   └── errorHandler.js   # 404 and global error handling middleware
 │   ├── routes/
@@ -38,12 +110,12 @@ turbosoft/
 │   │   ├── calendarRoutes.js # Google Calendar APIs (/api/calendar/*)
 │   │   └── apiRoutes.js      # Core resource APIs (/api/*)
 │   ├── services/
-│   │   ├── bookingService.js       # Customer & meeting room reservation service
-│   │   ├── zohoCrmService.js       # Zoho CRM Node.js SDK 2.0 integration
+│   │   ├── bookingService.js       # Customer & meeting room reservation service (PostgreSQL queries)
+│   │   ├── zohoCrmService.js       # Zoho CRM Node.js SDK 2.0 integration & DB synchronization
 │   │   └── googleCalendarService.js# Google Calendar OAuth2 & Events integration
 │   ├── views/                # EJS UI templates (customers, book, bookings, layout)
 │   ├── app.js                # Express app setup & route mounting
-│   └── server.js             # Server entrypoint
+│   └── server.js             # Server entrypoint with DB initialization
 ├── public/                   # Static CSS and assets
 ├── .env.example              # Environment variables template
 ├── package.json
@@ -56,34 +128,41 @@ turbosoft/
 
 ### Prerequisites
 
-Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) and [npm](https://www.npmjs.com/) installed on your machine.
+- [Node.js](https://nodejs.org/) (v18 or higher recommended)
+- [npm](https://www.npmjs.com/)
+- [PostgreSQL](https://www.postgresql.org/) (running locally or remotely)
 
-### Installation
+### Installation & Configuration
 
-1. **Navigate to the project directory:**
-   ```bash
-   cd turbosoft
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies:**
    ```bash
    npm install
    ```
 
-3. **Configure environment variables:**
-   Copy the example environment configuration file to create your `.env` file:
-   ```bash
-   # Windows PowerShell:
-   Copy-Item .env.example .env
+2. **Configure environment variables in `.env`:**
+   ```env
+   PORT=5000
+   NODE_ENV=development
 
-   # Linux / macOS:
-   cp .env.example .env
+   # PostgreSQL Database Configuration
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USER=postgres
+   DB_PASSWORD=admin
+   DB_NAME=meeting-room-bookings
+
+   # Zoho CRM Integration
+   ZOHO_API_CLIENT_ID=your_client_id
+   ZOHO_API_CLIENT_SECRET=your_client_secret
+   ZOHO_DATA_CENTER=USDataCenter
+   ZOHO_REDIRECT_URI=http://localhost:5000/api/zoho/callback
    ```
 
-4. **Start the development server:**
+3. **Start the development server:**
    ```bash
    npm run dev
    ```
+   *Note: Upon startup, `initDb()` will automatically create tables (`customers`, `rooms`, `time_slots`, `bookings`, `queues`) and seed rooms/slots if not already existing.*
 
 ---
 
@@ -94,12 +173,12 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 | Method | Route | Description |
 |---|---|---|
 | `GET` | `/` | Root / Redirects to Integrations & Hub (`/customers`) |
-| `GET` | `/customers` | Integrations hub (Zoho CRM & Google Calendar connection cards) |
-| `POST` | `/customers/new` | Quick customer registration from UI |
+| `GET` | `/customers` | Integrations hub & PostgreSQL customer directory |
+| `POST` | `/customers/new` | Quick customer registration saved to PostgreSQL |
 | `GET` | `/book` | Interactive meeting room and time slot picker view |
-| `POST` | `/book` | Submit reservation (automatically syncs to Google Calendar if connected) |
+| `POST` | `/book` | Submit reservation (saved to PostgreSQL & synced to Google Calendar) |
 | `GET` | `/bookings` | Reservations directory & status management |
-| `POST` | `/bookings/:id/cancel` | Cancel booking from UI (removes calendar event) |
+| `POST` | `/bookings/:id/cancel` | Cancel booking from UI (updates status in PostgreSQL & removes calendar event) |
 
 ---
 
@@ -111,7 +190,7 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 | `GET` | `/api/zoho/callback` | Handles OAuth redirect from Zoho and initializes SDK |
 | `GET` | `/api/zoho/status` | Returns JSON status of Zoho CRM connection |
 | `POST` | `/api/zoho/token-connect` | Connects via developer Self-Client grant/refresh token |
-| `POST` | `/api/zoho/sync` | Syncs Contacts & Leads from Zoho CRM into local customer directory |
+| `POST` | `/api/zoho/sync` | Syncs Contacts & Leads from Zoho CRM directly into PostgreSQL `customers` table |
 | `POST` | `/api/zoho/disconnect` | Disconnects Zoho CRM and clears stored tokens |
 | `GET` | `/api/zoho/contacts` | Directly queries contacts from Zoho CRM |
 
@@ -127,7 +206,7 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 | `GET` | `/api/calendar/events` | Lists upcoming events from primary Google Calendar |
 | `POST` | `/api/calendar/events` | Creates a calendar event for a meeting room booking |
 | `DELETE`| `/api/calendar/events/:eventId` | Deletes a calendar event from Google Calendar |
-| `POST` | `/api/calendar/sync` | Bulk syncs all local confirmed bookings to Google Calendar |
+| `POST` | `/api/calendar/sync` | Bulk syncs all local confirmed bookings from PostgreSQL to Google Calendar |
 | `POST` | `/api/calendar/disconnect` | Disconnects Google Calendar account |
 
 ---
@@ -136,12 +215,13 @@ Make sure you have [Node.js](https://nodejs.org/) (v18 or higher recommended) an
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/health` | Service health, uptime, and integration status check |
-| `GET` | `/api/customers` | Get customer list with optional `?search=` filtering |
-| `POST` | `/api/customers` | Create a new customer profile via API |
+| `GET` | `/api/health` | Service health, DB connectivity, uptime, and integration status |
+| `GET` | `/api/customers` | Get customer list from PostgreSQL with optional `?search=` |
+| `POST` | `/api/customers` | Create a new customer profile in PostgreSQL |
 | `GET` | `/api/rooms` | List all meeting rooms (with optional `?minCapacity=`) |
 | `GET` | `/api/rooms/:id/availability` | Query free & busy slots for a room on `?date=YYYY-MM-DD` |
 | `GET` | `/api/slots` | Fetch time slots with availability for `?roomId=&date=` |
-| `GET` | `/api/bookings` | List all bookings with query filters |
-| `POST` | `/api/bookings` | Book a room (auto-creates Google Calendar event) |
-| `POST` | `/api/bookings/:id/cancel` | Cancel booking (removes Google Calendar event) |
+| `GET` | `/api/bookings` | List all bookings from PostgreSQL with query filters |
+| `POST` | `/api/bookings` | Book a room in PostgreSQL (auto-creates Google Calendar event) |
+| `POST` | `/api/bookings/:id/cancel` | Cancel booking (updates PostgreSQL & removes Google Calendar event) |
+| `GET` | `/api/queues` | View background sync tasks and queue status (`PENDING`, `COMPLETED`, `FAILED`) |

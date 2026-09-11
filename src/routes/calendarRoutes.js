@@ -204,7 +204,7 @@ const handleCalendarSync = async (req, res) => {
       return res.redirect('/customers?error=' + encodeURIComponent(msg));
     }
 
-    const confirmedBookings = bookingService.getBookings({ status: 'Confirmed' });
+    const confirmedBookings = await bookingService.getBookings({ status: 'Confirmed' });
     let syncedCount = 0;
     const errors = [];
 
@@ -213,7 +213,7 @@ const handleCalendarSync = async (req, res) => {
         try {
           const calEvent = await googleCalendarService.createCalendarEvent(booking);
           if (calEvent && calEvent.id) {
-            bookingService.updateBooking(booking.id, { googleEventId: calEvent.id });
+            await bookingService.updateBooking(booking.id, { googleEventId: calEvent.id });
             syncedCount++;
           }
         } catch (syncErr) {

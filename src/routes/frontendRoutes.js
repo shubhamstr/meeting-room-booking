@@ -1,7 +1,6 @@
 import { Router } from 'express';
-import { bookingService } from '../services/bookingService.js';
+import { bookingService, getTodayDateString } from '../services/bookingService.js';
 import { googleCalendarService } from '../services/googleCalendarService.js';
-import { getTodayDateString } from '../data/mockData.js';
 
 const router = Router();
 
@@ -11,31 +10,43 @@ router.get('/', (req, res) => {
 });
 
 // 1. Customer Directory & Integration View
-router.get('/customers', (req, res) => {
-  const searchQuery = req.query.search || '';
-  const customers = bookingService.getCustomers(searchQuery);
-  const stats = bookingService.getStats();
+router.get('/customers', async (req, res) => {
+  try {
+    const searchQuery = req.query.search || '';
+    const customers = await bookingService.getCustomers(searchQuery);
+    const stats = await bookingService.getStats();
 
-  res.render('customers', {
-    customers,
-    searchQuery,
-    stats,
-    selectedCustomer: null,
-    successMessage: req.query.success || null,
-    errorMessage: req.query.error || null,
-    infoMessage: req.query.info || null
-  });
+    res.render('customers', {
+      customers,
+      searchQuery,
+      stats,
+      selectedCustomer: null,
+      successMessage: req.query.success || null,
+      errorMessage: req.query.error || null,
+      infoMessage: req.query.info || null
+    });
+  } catch (err) {
+    res.render('customers', {
+      customers: [],
+      searchQuery: '',
+      stats: { totalCustomers: 0, totalRooms: 0, activeBookings: 0, todayBookingsCount: 0, totalRevenue: 0 },
+      selectedCustomer: null,
+      successMessage: null,
+      errorMessage: `Database error: ${err.message}`,
+      infoMessage: null
+    });
+  }
 });
 
 // Quick-Add Customer Profile
-router.post('/customers/new', (req, res) => {
+router.post('/customers/new', async (req, res) => {
   try {
     const { name, email, company, department, phone } = req.body;
     if (!name || !email || !company) {
       return res.redirect('/customers?error=Name,+email,+and+company+are+required.');
     }
 
-    const newCust = bookingService.addCustomer({ name, email, company, department, phone });
+    const newCust = await bookingService.addCustomer({ name, email, company, department, phone });
     // Navigate to booking room for this newly created customer
     res.redirect(`/book?customerId=${newCust.id}&success=Customer+profile+created+successfully.+Pick+a+room+to+proceed.`);
   } catch (err) {
@@ -44,34 +55,42 @@ router.post('/customers/new', (req, res) => {
 });
 
 // 2. Room & Slot Picker View for Selected Customer
-router.get('/book', (req, res) => {
-  let customerId = req.query.customerId;
-  const customers = bookingService.getCustomers();
+router.get('/book', async (req, res) => {
+  try {
+    let customerId = req.query.customerId;
+    const customers = await bookingService.getCustomers();
 
-  if (!customerId && customers.length > 0) {
-    return res.redirect('/customers?info=Please+select+a+customer+first+to+book+a+room.');
+    if (!customerId && customers.length > 0) {
+      customerId = customers[0].id;
+    }
+
+    if (!customerId) {
+      return res.redirect('/customers?info=Please+sync+Zoho+CRM+or+register+a+customer+first+to+book+a+room.');
+    }
+
+    const customer = await bookingService.getCustomerById(customerId);
+    if (!customer) {
+      return res.redirect('/customers?error=Customer+not+found.+Please+pick+a+valid+customer.');
+    }
+
+    const rooms = await bookingService.getRooms();
+    const roomId = req.query.roomId || (rooms[0] ? rooms[0].id : '');
+    const selectedRoom = (await bookingService.getRoomById(roomId)) || rooms[0];
+    const selectedDate = req.query.date || getTodayDateString(0);
+    const slots = await bookingService.getSlotsWithAvailability(selectedRoom ? selectedRoom.id : '', selectedDate);
+
+    res.render('book', {
+      customer,
+      rooms,
+      selectedRoom,
+      selectedDate,
+      slots,
+      successMessage: req.query.success || null,
+      errorMessage: req.query.error || null
+    });
+  } catch (err) {
+    res.redirect(`/customers?error=${encodeURIComponent(err.message)}`);
   }
-
-  const customer = bookingService.getCustomerById(customerId) || customers[0];
-  if (!customer) {
-    return res.redirect('/customers?error=Customer+not+found.+Please+pick+a+valid+customer.');
-  }
-
-  const rooms = bookingService.getRooms();
-  const roomId = req.query.roomId || (rooms[0] ? rooms[0].id : '');
-  const selectedRoom = bookingService.getRoomById(roomId) || rooms[0];
-  const selectedDate = req.query.date || getTodayDateString(0);
-  const slots = bookingService.getSlotsWithAvailability(selectedRoom ? selectedRoom.id : '', selectedDate);
-
-  res.render('book', {
-    customer,
-    rooms,
-    selectedRoom,
-    selectedDate,
-    slots,
-    successMessage: req.query.success || null,
-    errorMessage: req.query.error || null
-  });
 });
 
 // Handle Booking Form Submission
@@ -83,7 +102,7 @@ router.post('/book', async (req, res) => {
       return res.redirect(`/book?customerId=${customerId}&roomId=${roomId}&error=Please+complete+room+and+slot+selection.`);
     }
 
-    const newBooking = bookingService.createBooking({
+    const newBooking = await bookingService.createBooking({
       customerId,
       roomId,
       date,
@@ -99,7 +118,7 @@ router.post('/book', async (req, res) => {
       try {
         const event = await googleCalendarService.createCalendarEvent(newBooking);
         if (event && event.id) {
-          bookingService.updateBooking(newBooking.id, { googleEventId: event.id });
+          await bookingService.updateBooking(newBooking.id, { googleEventId: event.id });
           calendarSuccessNotice = '+Event+synced+to+Google+Calendar!';
         }
       } catch (calErr) {
@@ -116,26 +135,38 @@ router.post('/book', async (req, res) => {
 });
 
 // 3. Bookings List & Overview
-router.get('/bookings', (req, res) => {
-  const { search, roomId, status, date } = req.query;
-  const bookings = bookingService.getBookings({ search, roomId, status, date });
-  const rooms = bookingService.getRooms();
+router.get('/bookings', async (req, res) => {
+  try {
+    const { search, roomId, status, date } = req.query;
+    const bookings = await bookingService.getBookings({ search, roomId, status, date });
+    const rooms = await bookingService.getRooms();
 
-  res.render('bookings', {
-    bookings,
-    rooms,
-    filters: { search, roomId, status, date },
-    selectedCustomer: null,
-    successMessage: req.query.success || null,
-    errorMessage: req.query.error || null
-  });
+    res.render('bookings', {
+      bookings,
+      rooms,
+      filters: { search, roomId, status, date },
+      selectedCustomer: null,
+      successMessage: req.query.success || null,
+      errorMessage: req.query.error || null
+    });
+  } catch (err) {
+    res.render('bookings', {
+      bookings: [],
+      rooms: [],
+      filters: { search: '', roomId: '', status: '', date: '' },
+      selectedCustomer: null,
+      successMessage: null,
+      errorMessage: `Failed to load bookings: ${err.message}`
+    });
+  }
 });
 
 // Cancel a Booking
 router.post('/bookings/:id/cancel', async (req, res) => {
   try {
     const { id } = req.params;
-    const booking = bookingService.getBookings().find(b => b.id === id);
+    const allBookings = await bookingService.getBookings();
+    const booking = allBookings.find(b => b.id === id);
 
     if (booking && booking.googleEventId && googleCalendarService.isConnected()) {
       try {
@@ -145,7 +176,7 @@ router.post('/bookings/:id/cancel', async (req, res) => {
       }
     }
 
-    bookingService.cancelBooking(id);
+    await bookingService.cancelBooking(id);
     res.redirect(`/bookings?success=Booking+${id}+has+been+cancelled.`);
   } catch (err) {
     res.redirect(`/bookings?error=${encodeURIComponent(err.message)}`);

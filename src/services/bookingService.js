@@ -1,45 +1,101 @@
-import { initialCustomers, initialRooms, allTimeSlots, initialBookings, getTodayDateString } from '../data/mockData.js';
+import { query } from '../config/db.js';
+
+// Helper to get formatted date string YYYY-MM-DD
+export function getTodayDateString(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().split('T')[0];
+}
 
 class BookingService {
-  constructor() {
-    this.customers = [...initialCustomers];
-    this.rooms = [...initialRooms];
-    this.bookings = [...initialBookings];
-    this.slots = [...allTimeSlots];
-  }
+  // --- Customer Operations (PostgreSQL) ---
 
-  // --- Customer Operations ---
-  getCustomers(searchQuery = '') {
-    if (!searchQuery.trim()) {
-      return this.customers.map(c => ({
-        ...c,
-        bookingCount: this.bookings.filter(b => b.customerId === c.id && b.status !== 'Cancelled').length
-      }));
+  async getCustomers(searchQuery = '') {
+    let sql = `
+      SELECT 
+        c.id,
+        c.zoho_id AS "zohoId",
+        c.name,
+        c.email,
+        c.phone,
+        c.company,
+        c.department,
+        c.avatar,
+        c.initials,
+        c.badge_color AS "badgeColor",
+        c.source,
+        c.created_at AS "createdAt",
+        COUNT(b.id) FILTER (WHERE b.status != 'Cancelled')::int AS "bookingCount"
+      FROM customers c
+      LEFT JOIN bookings b ON c.id = b.customer_id
+    `;
+    const params = [];
+
+    if (searchQuery && searchQuery.trim()) {
+      const q = `%${searchQuery.trim().toLowerCase()}%`;
+      sql += ` WHERE LOWER(c.name) LIKE $1 OR LOWER(c.email) LIKE $1 OR LOWER(c.company) LIKE $1 OR LOWER(c.department) LIKE $1`;
+      params.push(q);
     }
-    const q = searchQuery.toLowerCase().trim();
-    return this.customers
-      .filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.company.toLowerCase().includes(q) ||
-        c.department.toLowerCase().includes(q)
-      )
-      .map(c => ({
-        ...c,
-        bookingCount: this.bookings.filter(b => b.customerId === c.id && b.status !== 'Cancelled').length
-      }));
+
+    sql += ` GROUP BY c.id ORDER BY c.created_at DESC;`;
+
+    const res = await query(sql, params);
+    return res.rows;
   }
 
-  getCustomerById(id) {
-    return this.customers.find(c => c.id === id) || null;
+  async getCustomerById(id) {
+    if (!id) return null;
+    const res = await query(
+      `SELECT 
+        id,
+        zoho_id AS "zohoId",
+        name,
+        email,
+        phone,
+        company,
+        department,
+        avatar,
+        initials,
+        badge_color AS "badgeColor",
+        source,
+        created_at AS "createdAt"
+       FROM customers 
+       WHERE id = $1 LIMIT 1;`,
+      [id]
+    );
+    return res.rows[0] || null;
   }
 
-  addCustomer({ name, email, phone, company, department }) {
+  async getCustomerByEmail(email) {
+    if (!email) return null;
+    const res = await query(
+      `SELECT 
+        id,
+        zoho_id AS "zohoId",
+        name,
+        email,
+        phone,
+        company,
+        department,
+        avatar,
+        initials,
+        badge_color AS "badgeColor",
+        source,
+        created_at AS "createdAt"
+       FROM customers 
+       WHERE LOWER(email) = LOWER($1) LIMIT 1;`,
+      [email.trim()]
+    );
+    return res.rows[0] || null;
+  }
+
+  async addCustomer({ id, zohoId, name, email, phone, company, department, avatar, source = 'Direct' }) {
     const safeName = String(name || '').trim();
-    const safeEmail = String(email || '').trim();
+    const safeEmail = String(email || '').trim().toLowerCase();
     const safePhone = phone ? String(phone).trim() : '+1 (555) 000-0000';
     const safeCompany = company ? (typeof company === 'object' ? (company.name || company.value || 'Independent Corp') : String(company).trim()) : 'Independent Corp';
     const safeDept = department ? (typeof department === 'object' ? (department.name || department.value || 'General') : String(department).trim()) : 'General';
+    const customerId = id || `cust-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     const initials = safeName
       .split(' ')
@@ -47,60 +103,146 @@ class BookingService {
       .map(n => n[0])
       .join('')
       .toUpperCase()
-      .slice(0, 2);
+      .slice(0, 2) || 'CU';
 
     const colors = ['#6366f1', '#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const defaultAvatar = avatar || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`;
 
-    const newCustomer = {
-      id: `cust-${Date.now()}`,
-      name: safeName,
-      email: safeEmail,
-      phone: safePhone,
-      company: safeCompany,
-      department: safeDept,
-      avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
-      initials: initials || 'CU',
-      badgeColor: randomColor
-    };
-
-    this.customers.unshift(newCustomer);
-    return newCustomer;
-  }
-
-  // --- Room Operations ---
-  getRooms(minCapacity = 0) {
-    if (minCapacity > 0) {
-      return this.rooms.filter(r => r.capacity >= minCapacity);
-    }
-    return this.rooms;
-  }
-
-  getRoomById(id) {
-    return this.rooms.find(r => r.id === id) || null;
-  }
-
-  // --- Slots & Availability ---
-  getAllSlots() {
-    return this.slots;
-  }
-
-  getSlotsWithAvailability(roomId, date) {
-    const targetDate = date || getTodayDateString(0);
-    const existingBookings = this.bookings.filter(
-      b => b.roomId === roomId && b.date === targetDate && b.status !== 'Cancelled'
+    const res = await query(
+      `INSERT INTO customers (id, zoho_id, name, email, phone, company, department, avatar, initials, badge_color, source, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+       ON CONFLICT (email) DO UPDATE SET
+         zoho_id = COALESCE(EXCLUDED.zoho_id, customers.zoho_id),
+         name = EXCLUDED.name,
+         phone = EXCLUDED.phone,
+         company = EXCLUDED.company,
+         department = EXCLUDED.department,
+         source = EXCLUDED.source,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING 
+         id,
+         zoho_id AS "zohoId",
+         name,
+         email,
+         phone,
+         company,
+         department,
+         avatar,
+         initials,
+         badge_color AS "badgeColor",
+         source,
+         created_at AS "createdAt";`,
+      [customerId, zohoId || null, safeName, safeEmail, safePhone, safeCompany, safeDept, defaultAvatar, initials, randomColor, source]
     );
 
-    const bookedSlotIds = new Set(existingBookings.map(b => b.slotId));
+    return res.rows[0];
+  }
 
-    return this.slots.map(slot => {
-      const isBooked = bookedSlotIds.has(slot.id);
-      const bookingInfo = isBooked
-        ? existingBookings.find(b => b.slotId === slot.id)
-        : null;
+  // --- Room Operations (PostgreSQL) ---
+
+  async getRooms(minCapacity = 0) {
+    let sql = `
+      SELECT 
+        id,
+        name,
+        floor,
+        capacity,
+        hourly_rate::float AS "hourlyRate",
+        type,
+        description,
+        image,
+        amenities
+      FROM rooms
+    `;
+    const params = [];
+
+    if (minCapacity > 0) {
+      sql += ` WHERE capacity >= $1`;
+      params.push(minCapacity);
+    }
+
+    sql += ` ORDER BY capacity ASC;`;
+
+    const res = await query(sql, params);
+    return res.rows.map(r => ({
+      ...r,
+      amenities: typeof r.amenities === 'string' ? JSON.parse(r.amenities) : (r.amenities || [])
+    }));
+  }
+
+  async getRoomById(id) {
+    if (!id) return null;
+    const res = await query(
+      `SELECT 
+        id,
+        name,
+        floor,
+        capacity,
+        hourly_rate::float AS "hourlyRate",
+        type,
+        description,
+        image,
+        amenities
+       FROM rooms 
+       WHERE id = $1 LIMIT 1;`,
+      [id]
+    );
+    if (!res.rows[0]) return null;
+    const r = res.rows[0];
+    return {
+      ...r,
+      amenities: typeof r.amenities === 'string' ? JSON.parse(r.amenities) : (r.amenities || [])
+    };
+  }
+
+  // --- Time Slots & Availability Operations (PostgreSQL) ---
+
+  async getAllSlots() {
+    const res = await query(`
+      SELECT 
+        id,
+        label,
+        time,
+        period,
+        sort_order AS "sortOrder"
+      FROM time_slots 
+      ORDER BY sort_order ASC;
+    `);
+    return res.rows;
+  }
+
+  async getSlotsWithAvailability(roomId, date) {
+    const targetDate = date || getTodayDateString(0);
+
+    // Fetch all slots
+    const slots = await this.getAllSlots();
+
+    // Fetch active bookings for this room & date from PostgreSQL
+    const bookingsRes = await query(
+      `SELECT 
+        b.id,
+        b.slot_id AS "slotId",
+        b.title,
+        c.name AS "customerName"
+       FROM bookings b
+       JOIN customers c ON b.customer_id = c.id
+       WHERE b.room_id = $1 AND b.date = $2 AND b.status != 'Cancelled';`,
+      [roomId, targetDate]
+    );
+
+    const existingBookings = bookingsRes.rows;
+    const bookedSlotMap = new Map(existingBookings.map(b => [b.slotId, b]));
+
+    return slots.map(slot => {
+      const isBooked = bookedSlotMap.has(slot.id);
+      const bookingInfo = isBooked ? bookedSlotMap.get(slot.id) : null;
 
       return {
-        ...slot,
+        id: slot.id,
+        label: slot.label,
+        time: slot.time,
+        period: slot.period,
         isAvailable: !isBooked,
         bookedBy: bookingInfo ? bookingInfo.customerName : null,
         bookingTitle: bookingInfo ? bookingInfo.title : null
@@ -108,107 +250,247 @@ class BookingService {
     });
   }
 
-  // --- Booking Operations ---
-  createBooking({ customerId, roomId, date, slotId, title, attendees, notes }) {
-    const customer = this.getCustomerById(customerId);
+  // --- Booking Operations (PostgreSQL) ---
+
+  async createBooking({ customerId, roomId, date, slotId, title, attendees, notes }) {
+    const customer = await this.getCustomerById(customerId);
     if (!customer) {
       throw new Error('Customer not found. Please pick or register a valid customer.');
     }
 
-    const room = this.getRoomById(roomId);
+    const room = await this.getRoomById(roomId);
     if (!room) {
       throw new Error('Meeting room not found.');
     }
 
-    const slot = this.slots.find(s => s.id === slotId);
+    const slots = await this.getAllSlots();
+    const slot = slots.find(s => s.id === slotId);
     if (!slot) {
       throw new Error('Invalid time slot selected.');
     }
 
-    // Check slot collision
-    const isConflict = this.bookings.some(
-      b => b.roomId === roomId && b.date === date && b.slotId === slotId && b.status !== 'Cancelled'
+    // Check slot collision in PostgreSQL
+    const collisionCheck = await query(
+      `SELECT id FROM bookings 
+       WHERE room_id = $1 AND date = $2 AND slot_id = $3 AND status != 'Cancelled'
+       LIMIT 1;`,
+      [roomId, date, slotId]
     );
 
-    if (isConflict) {
+    if (collisionCheck.rows.length > 0) {
       throw new Error(`Room "${room.name}" is already booked for ${slot.label} on ${date}.`);
     }
 
-    const newBooking = {
-      id: `BK-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerId: customer.id,
-      customerName: customer.name,
-      customerCompany: customer.company,
-      roomId: room.id,
-      roomName: room.name,
-      date,
-      slotId: slot.id,
-      slotLabel: slot.label,
-      title: title?.trim() || `Team Sync - ${customer.company}`,
-      attendees: parseInt(attendees, 10) || 2,
-      notes: notes?.trim() || '',
-      totalCost: room.hourlyRate,
-      status: 'Confirmed',
-      googleEventId: null,
-      createdAt: new Date().toISOString()
-    };
+    const bookingId = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
+    const bookingTitle = title?.trim() || `Team Sync - ${customer.company}`;
+    const attendeeCount = parseInt(attendees, 10) || 2;
+    const bookingNotes = notes?.trim() || '';
+    const totalCost = room.hourlyRate;
 
-    this.bookings.unshift(newBooking);
-    return newBooking;
-  }
+    const res = await query(
+      `INSERT INTO bookings (
+        id, customer_id, room_id, date, slot_id, slot_label, title, attendees, notes, total_cost, status, google_event_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Confirmed', NULL)
+      RETURNING 
+        id,
+        customer_id AS "customerId",
+        room_id AS "roomId",
+        date,
+        slot_id AS "slotId",
+        slot_label AS "slotLabel",
+        title,
+        attendees,
+        notes,
+        total_cost::float AS "totalCost",
+        status,
+        google_event_id AS "googleEventId",
+        created_at AS "createdAt";`,
+      [bookingId, customer.id, room.id, date, slot.id, slot.label, bookingTitle, attendeeCount, bookingNotes, totalCost]
+    );
 
-  updateBooking(bookingId, updates = {}) {
-    const booking = this.bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found.');
-    }
-    Object.assign(booking, updates);
-    return booking;
-  }
-
-  cancelBooking(bookingId) {
-    const booking = this.bookings.find(b => b.id === bookingId);
-    if (!booking) {
-      throw new Error('Booking not found.');
-    }
-    booking.status = 'Cancelled';
-    return booking;
-  }
-
-  getBookings({ search = '', customerId = '', roomId = '', status = '', date = '' } = {}) {
-    return this.bookings.filter(b => {
-      if (customerId && b.customerId !== customerId) return false;
-      if (roomId && b.roomId !== roomId) return false;
-      if (status && b.status.toLowerCase() !== status.toLowerCase()) return false;
-      if (date && b.date !== date) return false;
-      if (search) {
-        const q = search.toLowerCase().trim();
-        const matchesTitle = b.title.toLowerCase().includes(q);
-        const matchesCustomer = b.customerName.toLowerCase().includes(q);
-        const matchesRoom = b.roomName.toLowerCase().includes(q);
-        const matchesId = b.id.toLowerCase().includes(q);
-        if (!matchesTitle && !matchesCustomer && !matchesRoom && !matchesId) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }
-
-  getStats() {
-    const today = getTodayDateString(0);
-    const todayBookings = this.bookings.filter(b => b.date === today && b.status !== 'Cancelled');
-    const totalRevenue = this.bookings
-      .filter(b => b.status === 'Confirmed')
-      .reduce((sum, b) => sum + (b.totalCost || 0), 0);
+    const newBooking = res.rows[0];
 
     return {
-      totalCustomers: this.customers.length,
-      totalRooms: this.rooms.length,
-      activeBookings: this.bookings.filter(b => b.status === 'Confirmed').length,
-      todayBookingsCount: todayBookings.length,
-      totalRevenue
+      ...newBooking,
+      customerName: customer.name,
+      customerCompany: customer.company,
+      roomName: room.name
     };
+  }
+
+  async updateBooking(bookingId, updates = {}) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (updates.googleEventId !== undefined) {
+      fields.push(`google_event_id = $${idx++}`);
+      values.push(updates.googleEventId);
+    }
+    if (updates.status !== undefined) {
+      fields.push(`status = $${idx++}`);
+      values.push(updates.status);
+    }
+    if (updates.title !== undefined) {
+      fields.push(`title = $${idx++}`);
+      values.push(updates.title);
+    }
+    if (updates.notes !== undefined) {
+      fields.push(`notes = $${idx++}`);
+      values.push(updates.notes);
+    }
+
+    if (fields.length === 0) return null;
+
+    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(bookingId);
+
+    const res = await query(
+      `UPDATE bookings SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *;`,
+      values
+    );
+
+    return res.rows[0] || null;
+  }
+
+  async cancelBooking(bookingId) {
+    const res = await query(
+      `UPDATE bookings 
+       SET status = 'Cancelled', updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1 
+       RETURNING 
+        id,
+        customer_id AS "customerId",
+        room_id AS "roomId",
+        date,
+        slot_id AS "slotId",
+        slot_label AS "slotLabel",
+        title,
+        status,
+        google_event_id AS "googleEventId";`,
+      [bookingId]
+    );
+
+    if (res.rows.length === 0) {
+      throw new Error('Booking not found.');
+    }
+
+    return res.rows[0];
+  }
+
+  async getBookings({ search = '', customerId = '', roomId = '', status = '', date = '' } = {}) {
+    let sql = `
+      SELECT 
+        b.id,
+        b.customer_id AS "customerId",
+        c.name AS "customerName",
+        c.company AS "customerCompany",
+        c.email AS "customerEmail",
+        c.avatar AS "customerAvatar",
+        b.room_id AS "roomId",
+        r.name AS "roomName",
+        r.floor AS "roomFloor",
+        b.date,
+        b.slot_id AS "slotId",
+        b.slot_label AS "slotLabel",
+        b.title,
+        b.attendees,
+        b.notes,
+        b.total_cost::float AS "totalCost",
+        b.status,
+        b.google_event_id AS "googleEventId",
+        b.created_at AS "createdAt"
+      FROM bookings b
+      JOIN customers c ON b.customer_id = c.id
+      JOIN rooms r ON b.room_id = r.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let idx = 1;
+
+    if (customerId) {
+      sql += ` AND b.customer_id = $${idx++}`;
+      params.push(customerId);
+    }
+    if (roomId) {
+      sql += ` AND b.room_id = $${idx++}`;
+      params.push(roomId);
+    }
+    if (status) {
+      sql += ` AND LOWER(b.status) = LOWER($${idx++})`;
+      params.push(status);
+    }
+    if (date) {
+      sql += ` AND b.date = $${idx++}`;
+      params.push(date);
+    }
+    if (search && search.trim()) {
+      const q = `%${search.trim().toLowerCase()}%`;
+      sql += ` AND (LOWER(b.title) LIKE $${idx} OR LOWER(c.name) LIKE $${idx} OR LOWER(r.name) LIKE $${idx} OR LOWER(b.id) LIKE $${idx})`;
+      params.push(q);
+      idx++;
+    }
+
+    sql += ` ORDER BY b.date DESC, b.slot_id ASC;`;
+
+    const res = await query(sql, params);
+    return res.rows;
+  }
+
+  async getStats() {
+    const today = getTodayDateString(0);
+
+    const [custRes, roomRes, activeBookRes, todayBookRes, revRes] = await Promise.all([
+      query(`SELECT COUNT(*)::int AS count FROM customers;`),
+      query(`SELECT COUNT(*)::int AS count FROM rooms;`),
+      query(`SELECT COUNT(*)::int AS count FROM bookings WHERE status = 'Confirmed';`),
+      query(`SELECT COUNT(*)::int AS count FROM bookings WHERE date = $1 AND status != 'Cancelled';`, [today]),
+      query(`SELECT COALESCE(SUM(total_cost), 0)::float AS total FROM bookings WHERE status = 'Confirmed';`)
+    ]);
+
+    return {
+      totalCustomers: custRes.rows[0].count,
+      totalRooms: roomRes.rows[0].count,
+      activeBookings: activeBookRes.rows[0].count,
+      todayBookingsCount: todayBookRes.rows[0].count,
+      totalRevenue: revRes.rows[0].total
+    };
+  }
+
+  // --- Queue Operations (PostgreSQL) ---
+
+  async addToQueue(type, payload = {}) {
+    const queueId = `Q-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const res = await query(
+      `INSERT INTO queues (id, type, payload, status)
+       VALUES ($1, $2, $3, 'PENDING')
+       RETURNING *;`,
+      [queueId, type, JSON.stringify(payload)]
+    );
+    return res.rows[0];
+  }
+
+  async getQueues(status = '') {
+    let sql = `SELECT * FROM queues`;
+    const params = [];
+    if (status) {
+      sql += ` WHERE status = $1`;
+      params.push(status);
+    }
+    sql += ` ORDER BY created_at DESC;`;
+    const res = await query(sql, params);
+    return res.rows;
+  }
+
+  async updateQueueStatus(id, status, errorMessage = null) {
+    const res = await query(
+      `UPDATE queues 
+       SET status = $1::varchar, error_message = $2, processed_at = CASE WHEN $1::varchar IN ('COMPLETED', 'FAILED') THEN CURRENT_TIMESTAMP ELSE processed_at END, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *;`,
+      [status, errorMessage, id]
+    );
+    return res.rows[0] || null;
   }
 }
 
