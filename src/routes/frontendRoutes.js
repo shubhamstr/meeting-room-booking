@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { bookingService, getTodayDateString } from '../services/bookingService.js';
 import { googleCalendarService } from '../services/googleCalendarService.js';
+import { queueService } from '../services/queueService.js';
 
 const router = Router();
 
@@ -196,19 +197,28 @@ const handleBookingPost = async (req, res) => {
       notes
     });
 
-    // Auto sync to Google Calendar if connected
+    // Auto sync to Google Calendar if connected, or enqueue for retry
     let calendarSuccessNotice = '';
-    if (googleCalendarService.isConnected()) {
-      try {
-        const event = await googleCalendarService.createCalendarEvent(newBooking);
-        if (event && event.id) {
-          await bookingService.updateBooking(newBooking.id, { googleEventId: event.id });
-          calendarSuccessNotice = '+Event+synced+to+Google+Calendar!';
-          newBooking.googleEventId = event.id;
-        }
-      } catch (calErr) {
-        console.warn('Google Calendar sync notice:', calErr.message);
+    let calendarSynced = false;
+
+    try {
+      if (!googleCalendarService.isConnected()) {
+        throw new Error('Google Calendar not connected');
       }
+
+      const event = await googleCalendarService.createCalendarEvent(newBooking);
+      if (event && event.id) {
+        await bookingService.updateBooking(newBooking.id, { googleEventId: event.id });
+        calendarSuccessNotice = '+Event+synced+to+Google+Calendar!';
+        newBooking.googleEventId = event.id;
+        calendarSynced = true;
+      } else {
+        throw new Error('Google Calendar API returned no event ID');
+      }
+    } catch (calErr) {
+      console.warn(`[Frontend Booking] Calendar sync failed for booking ${newBooking.id}: ${calErr.message}. Enqueuing for background retry...`);
+      await queueService.enqueueCalendarEvent(newBooking, calErr.message);
+      calendarSuccessNotice = '+Calendar+sync+queued+for+retry';
     }
 
     if (isJson) {
@@ -216,7 +226,8 @@ const handleBookingPost = async (req, res) => {
         success: true,
         message: `Meeting room booked successfully!`,
         data: newBooking,
-        calendarSynced: !!newBooking.googleEventId
+        calendarSynced,
+        calendarQueued: !calendarSynced
       });
     }
 

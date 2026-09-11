@@ -3,6 +3,7 @@ dotenv.config();
 
 import app from './app.js';
 import { initDb, pool } from './config/db.js';
+import { queueService } from './services/queueService.js';
 
 const PORT = process.env.PORT || 5000;
 
@@ -10,6 +11,10 @@ const PORT = process.env.PORT || 5000;
 async function startServer() {
   try {
     await initDb();
+    
+    // Start background queue processor worker (checks every 30 seconds)
+    queueService.startQueueWorker(30000);
+
     const server = app.listen(PORT, () => {
       console.log(`[TurboSpace] Server is running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
       console.log(`[TurboSpace] Web UI: http://localhost:${PORT}/customers`);
@@ -19,6 +24,7 @@ async function startServer() {
     // Handle graceful shutdown
     const gracefulShutdown = async (signal) => {
       console.log(`\nReceived ${signal}. Closing HTTP server gracefully...`);
+      queueService.stopQueueWorker();
       server.close(async () => {
         console.log('HTTP server closed.');
         try {

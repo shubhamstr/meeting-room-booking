@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { googleCalendarService } from '../services/googleCalendarService.js';
 import { bookingService } from '../services/bookingService.js';
+import { queueService } from '../services/queueService.js';
 
 const router = Router();
 
@@ -60,6 +61,9 @@ router.get('/callback', async (req, res) => {
 
     const tokenData = await googleCalendarService.handleOAuthCallback(code, redirectUri);
     const email = tokenData.userEmail ? ` (${tokenData.userEmail})` : '';
+
+    // Immediately trigger processing of any pending queued calendar jobs in the background
+    queueService.processPendingQueues().catch(err => console.warn('[Calendar Auth] Auto queue process error:', err.message));
 
     if (wantsJson(req)) {
       return res.json({

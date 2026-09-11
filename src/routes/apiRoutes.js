@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { bookingService, getTodayDateString } from '../services/bookingService.js';
 import { googleCalendarService } from '../services/googleCalendarService.js';
 import { zohoCrmService } from '../services/zohoCrmService.js';
+import { queueService } from '../services/queueService.js';
 
 const router = Router();
 
@@ -242,25 +243,37 @@ router.post('/bookings', async (req, res) => {
       notes
     });
 
-    // Auto-sync with Google Calendar if connected
-    let calendarEvent = null;
-    if (googleCalendarService.isConnected()) {
-      try {
-        calendarEvent = await googleCalendarService.createCalendarEvent(newBooking);
-        if (calendarEvent && calendarEvent.id) {
-          await bookingService.updateBooking(newBooking.id, { googleEventId: calendarEvent.id });
-          newBooking.googleEventId = calendarEvent.id;
-        }
-      } catch (calErr) {
-        console.warn('Failed to sync booking to Google Calendar automatically:', calErr.message);
+    // Auto-sync with Google Calendar or add to queue if it fails/calendar is disconnected
+    let calendarSynced = false;
+    let calendarError = null;
+
+    try {
+      if (!googleCalendarService.isConnected()) {
+        throw new Error('Google Calendar is not currently connected');
       }
+
+      const calendarEvent = await googleCalendarService.createCalendarEvent(newBooking);
+      if (calendarEvent && calendarEvent.id) {
+        await bookingService.updateBooking(newBooking.id, { googleEventId: calendarEvent.id });
+        newBooking.googleEventId = calendarEvent.id;
+        calendarSynced = true;
+      } else {
+        throw new Error('Google Calendar API returned no event ID');
+      }
+    } catch (calErr) {
+      calendarError = calErr.message;
+      console.warn(`[API Bookings] Calendar event creation failed for booking ${newBooking.id}: ${calErr.message}. Enqueuing for background retry...`);
+      await queueService.enqueueCalendarEvent(newBooking, calErr.message);
     }
 
     res.status(201).json({
       success: true,
-      message: `Meeting room "${newBooking.roomName}" booked successfully for ${newBooking.startTime} - ${newBooking.endTime} on ${newBooking.date}!`,
+      message: calendarSynced
+        ? `Meeting room "${newBooking.roomName}" booked successfully and synced to Google Calendar!`
+        : `Meeting room "${newBooking.roomName}" booked successfully! (Google Calendar sync queued for retry: ${calendarError})`,
       data: newBooking,
-      calendarSynced: !!newBooking.googleEventId
+      calendarSynced,
+      calendarQueued: !calendarSynced
     });
   } catch (err) {
     res.status(400).json({
@@ -299,11 +312,11 @@ router.post('/bookings/:id/cancel', async (req, res) => {
   }
 });
 
-// 5. Queues API
+// 5. Queues API (Status, Process, Retry)
 router.get('/queues', async (req, res) => {
   try {
-    const { status } = req.query;
-    const queues = await bookingService.getQueues(status);
+    const { status, type, limit } = req.query;
+    const queues = await queueService.getQueues({ status, type, limit });
     res.json({
       success: true,
       count: queues.length,
@@ -311,6 +324,33 @@ router.get('/queues', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/queues/process', async (req, res) => {
+  try {
+    const result = await queueService.processPendingQueues();
+    res.json({
+      success: true,
+      message: 'Processed pending queues',
+      data: result
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/queues/:id/retry', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const retriedJob = await queueService.retryJob(id);
+    res.json({
+      success: true,
+      message: `Queue job ${id} reset to PENDING and scheduled for processing.`,
+      data: retriedJob
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
